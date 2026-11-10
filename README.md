@@ -25,4 +25,3 @@ The publish folder contains one VeriTakip.exe. Guna.UI2, the PowerShell data bri
 ## GitHub Actions
 
 .github/workflows/build-windows.yml runs smoke checks and creates a Windows x64 single-file VeriTakip.exe artifact on pushes and manual workflow dispatch.
-

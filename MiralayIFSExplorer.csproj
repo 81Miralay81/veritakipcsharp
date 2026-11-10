@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>VeriTakip</AssemblyName>
+    <AssemblyTitle>Veri Takip</AssemblyTitle>
+    <Product>Veri Takip</Product>
+    <RootNamespace>MiralayIFSExplorer</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\app.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Guna.UI2">
+      <HintPath>lib\Guna.UI2.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <EmbeddedResource Include="lib\Guna.UI2.dll" LogicalName="embedded.Guna.UI2.dll" />
+    <EmbeddedResource Include="assets\logo.png" LogicalName="embedded.logo.png" />
+    <EmbeddedResource Include="assets\teknorot-kalip-logo.png" LogicalName="embedded.teknorot-kalip-logo.png" />
+    <EmbeddedResource Include="assets\app.ico" LogicalName="embedded.app.ico" />
+    <EmbeddedResource Include="assets\ifs_bridge.ps1" LogicalName="embedded.ifs_bridge.ps1" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
+  </ItemGroup>
+</Project>
