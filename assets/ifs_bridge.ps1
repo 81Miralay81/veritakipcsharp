@@ -89,7 +89,11 @@ try {
   $credentialMethods = @($loginDialogType.GetMethods([Reflection.BindingFlags]::Public -bor [Reflection.BindingFlags]::Static) | Where-Object { $_.Name -match 'Credential|Login' } | ForEach-Object {
     [ordered]@{ name = $_.Name; parameters = @($_.GetParameters() | ForEach-Object { $_.ParameterType.FullName }) }
   })
-  Write-IFSLog "credential_api_shape" @{ credential_type = $credentialType.FullName; properties = $credentialProperties; static_methods = $credentialMethods }
+  $dialogMethods = @($loginDialogType.GetMethods([Reflection.BindingFlags]::Public -bor [Reflection.BindingFlags]::Instance -bor [Reflection.BindingFlags]::DeclaredOnly) | Where-Object { $_.Name -match 'ShowDialog|Credential|Authenticate' } | ForEach-Object {
+    [ordered]@{ name = $_.Name; return_type = $_.ReturnType.FullName; parameters = @($_.GetParameters() | ForEach-Object { $_.ParameterType.FullName }) }
+  })
+  $loginAssembly = $loginDialogType.Assembly.GetName().Version.ToString()
+  Write-IFSLog "credential_api_shape" @{ credential_type = $credentialType.FullName; properties = $credentialProperties; static_methods = $credentialMethods; dialog_methods = $dialogMethods; assembly_version = $loginAssembly }
 
   $remember = [bool]$cfg.remember_credentials
   $storedUser = [string]$cred.UserName
@@ -128,6 +132,23 @@ try {
     } catch { }
   }
   Write-IFSLog "login_result" @{ result = [string]$login; session_initialized = [bool]$conn.IsSessionInitialized; user_id_present = (-not [string]::IsNullOrWhiteSpace([string]$dialog.UserId)); input_credential_has_username_after_dialog = (-not [string]::IsNullOrWhiteSpace($postDialogUser)); input_credential_has_password_after_dialog = (-not [string]::IsNullOrWhiteSpace($postDialogPassword)); dialog_credential_objects = $dialogCredentialObjects }
+  try {
+    $connectionCredential = $conn.GetConnectionCredentials()
+    if ($connectionCredential) {
+      $connectionCredentialProperties = @($connectionCredential.GetType().GetProperties([Reflection.BindingFlags]::Public -bor [Reflection.BindingFlags]::Instance) | ForEach-Object {
+        $hasValue = $false
+        if ($_.CanRead -and $_.GetIndexParameters().Count -eq 0) {
+          try { $v = $_.GetValue($connectionCredential, $null); $hasValue = ($null -ne $v -and -not [string]::IsNullOrWhiteSpace([string]$v)) } catch { }
+        }
+        [ordered]@{ name = $_.Name; type = $_.PropertyType.FullName; can_read = $_.CanRead; has_value = $hasValue }
+      })
+      Write-IFSLog "connection_credentials_shape" @{ type = $connectionCredential.GetType().FullName; properties = $connectionCredentialProperties }
+    } else {
+      Write-IFSLog "connection_credentials_shape" @{ returned_object = $false }
+    }
+  } catch {
+    Write-IFSLog "connection_credentials_shape_error" @{ exception_type = $_.Exception.GetType().FullName; message = $_.Exception.Message }
+  }
   if ([string]$login -ne "OK" -or !$conn.IsSessionInitialized) {
     throw "IFS oturumu baslatilamadi veya giris iptal edildi."
   }
