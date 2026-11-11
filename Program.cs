@@ -306,13 +306,15 @@ internal static class SyncService
         return new() { ["view"] = s.View, ["columns"] = columns, ["filters"] = filters, ["ifs_url"] = IfsUrl, ["system_name"] = SystemName, ["remember_credentials"] = Database.GetPreference("remember_ifs") };
     }
     public static bool Execute(long id, out string message)
-        => Execute(id, null, out message);
+        => Execute(id, null, null, out message);
     public static bool Execute(long id, Func<long, bool>? confirmCount, out string message)
+        => Execute(id, confirmCount, null, out message);
+    public static bool Execute(long id, Func<long, bool>? confirmCount, Action<long, long>? progress, out string message)
     {
         try
         {
             var source = Database.GetSource(id) ?? throw new InvalidOperationException("Kaynak bulunamadı.");
-            using var result = RunBridge(source, confirmCount);
+            using var result = RunBridge(source, confirmCount, progress);
             if (result is null) { message = "Sorgu durduruldu. Koşulları düzenleyip yeniden deneyebilirsin."; return true; }
             if (result.RootElement.TryGetProperty("ifs_user", out var user) && user.ValueKind == JsonValueKind.String)
                 Database.SetTextPreference("ifs_user", user.GetString() ?? "");
@@ -361,7 +363,7 @@ internal static class SyncService
         var options = new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
         return "[" + string.Join(", ", names.Select(k => JsonSerializer.Serialize(row.GetProperty(k), options))) + "]";
     }
-    private static JsonDocument? RunBridge(Source source, Func<long, bool>? confirmCount)
+    private static JsonDocument? RunBridge(Source source, Func<long, bool>? confirmCount, Action<long, long>? progress)
     {
         using var temp = new TemporaryDirectory();
         var config = System.IO.Path.Combine(temp.Path, "request.json"); var output = System.IO.Path.Combine(temp.Path, "result.json");
@@ -390,6 +392,12 @@ internal static class SyncService
                 declined = !proceed;
             }
             else if (line == "MIRALAY_CANCELLED") declined = true;
+            else if (line.StartsWith("MIRALAY_PROGRESS:", StringComparison.Ordinal))
+            {
+                var parts = line["MIRALAY_PROGRESS:".Length..].Split(':');
+                if (parts.Length == 2 && long.TryParse(parts[0], out var completed) && long.TryParse(parts[1], out var total))
+                    progress?.Invoke(completed, total);
+            }
             else if (!string.IsNullOrWhiteSpace(line)) transcript.AppendLine(line);
         }
         if (!process.WaitForExit(900_000)) { try { process.Kill(true); } catch { } throw new TimeoutException("Sorgu 15 dakika içinde tamamlanmadı."); }
@@ -407,6 +415,28 @@ internal static class SyncService
         public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "MiralayIFS-" + Guid.NewGuid().ToString("N"));
         public TemporaryDirectory() => Directory.CreateDirectory(Path);
         public void Dispose() { try { Directory.Delete(Path, true); } catch { } }
+    }
+}
+
+internal sealed class ProgressForm : Form
+{
+    private readonly ProgressBar bar = new() { Dock = DockStyle.Top, Height = 24, Minimum = 0, Maximum = 100, Style = ProgressBarStyle.Continuous };
+    private readonly Label detail = new() { Dock = DockStyle.Top, Height = 34, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 10F, FontStyle.Bold) };
+    private readonly Label heading = new() { Dock = DockStyle.Top, Height = 42, Text = "IFS kayıtları indiriliyor", TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 12F, FontStyle.Bold) };
+    public ProgressForm()
+    {
+        Text = "Veri indiriliyor"; FormBorderStyle = FormBorderStyle.FixedDialog; StartPosition = FormStartPosition.CenterParent;
+        Size = new Size(480, 180); MinimizeBox = false; MaximizeBox = false; ControlBox = false;
+        BackColor = Theme.Background; ForeColor = Theme.Ink; ShowInTaskbar = false;
+        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(24), BackColor = Theme.Background };
+        Controls.Add(panel); panel.Controls.Add(bar); panel.Controls.Add(detail); panel.Controls.Add(heading);
+        heading.BringToFront(); detail.Top = heading.Bottom + 8; bar.Top = detail.Bottom + 8;
+    }
+    public void UpdateProgress(long completed, long total)
+    {
+        var percent = total <= 0 ? 100 : (int)Math.Clamp(completed * 100m / total, 0m, 100m);
+        bar.Value = percent;
+        detail.Text = $"%{percent}  —  {completed.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"))} / {total.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"))} kayıt";
     }
 }
 
@@ -706,17 +736,32 @@ internal sealed class ExplorerForm : Form
     {
         if (selected is null) { MessageBox.Show(this, "Önce kaynağı kaydet.", "Kaynak", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
         var id = selected.Id;
-        var firstRun = !Database.HasRun(id);
-        Func<long, bool>? confirmCount = firstRun
-            ? n => (bool)Invoke(new Func<bool>(() =>
-                MessageBox.Show(this, BuildCountPrompt(n), "İlk sorgu onayı", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes))
-            : null;
-        ToggleBusy(true); status.Text = "Kayıtlar sayılıyor; giriş penceresi açılabilir...";
+        Func<long, bool> confirmCount = n => (bool)Invoke(new Func<bool>(() =>
+            MessageBox.Show(this, BuildCountPrompt(n), "İndirme onayı", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes));
+        ProgressForm? progressForm = null;
+        void ReportProgress(long completed, long total)
+        {
+            if (IsDisposed || !IsHandleCreated) return;
+            try
+            {
+                BeginInvoke(new Action(() =>
+                {
+                    if (progressForm is null || progressForm.IsDisposed)
+                    {
+                        progressForm = new ProgressForm();
+                        progressForm.Show(this);
+                    }
+                    progressForm.UpdateProgress(completed, total);
+                }));
+            }
+            catch { }
+        }
+        ToggleBusy(true); status.Text = "IFS kayıt sayısı hesaplanıyor; henüz veri indirilmiyor...";
         try
         {
             var result = await Task.Run(() =>
             {
-                var ok = SyncService.Execute(id, confirmCount, out var msg);
+                var ok = SyncService.Execute(id, confirmCount, ReportProgress, out var msg);
                 return (ok, msg);
             });
             status.Text = result.msg;
@@ -730,7 +775,11 @@ internal sealed class ExplorerForm : Form
             else ShowError(result.msg);
         }
         catch (Exception ex) { status.Text = "Veri bağlantısı hatası."; ShowError(ex.ToString()); }
-        finally { ToggleBusy(false); }
+        finally
+        {
+            if (progressForm is not null && !progressForm.IsDisposed) progressForm.Close();
+            ToggleBusy(false);
+        }
     }
     private void ToggleBusy(bool busy)
     {
@@ -861,7 +910,7 @@ internal sealed class ExplorerForm : Form
     }
     internal static string BuildTaskCommand(string exe, long id) => $"\"{exe}\" --sync-source {id}";
     internal static string BuildCountPrompt(long matchingRows) =>
-        $"Sorgu {matchingRows.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"))} kayıtla eşleşiyor. Eşleşen tüm kayıtlar alınacak. Devam edilsin mi?";
+        $"IFS sorgusunda {matchingRows.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"))} kayıt bulundu.\n\nHenüz veri indirilmedi. İndirmeye başlansın mı?";
 }
 
 internal static class SmokeTests
