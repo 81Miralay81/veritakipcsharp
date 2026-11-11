@@ -456,6 +456,8 @@ internal sealed class ExplorerForm : Form
     private readonly Label userLabel = Theme.Label("Kullanıcı: " + Environment.UserName, 9, color: Theme.Muted);
     private readonly Guna2Button saveButton = Theme.Button("Alanları düzenle / Kaydet", true, 195);
     private readonly Guna2Button fetchButton = Theme.Button("↻   Şimdi Çek", true, 140, Theme.Blue);
+    private readonly Guna2Button scheduleOffButton = Theme.Button("Zamanlayıcıyı Kapat", false, 150, Color.FromArgb(105, 55, 72));
+    private readonly List<int> visibleRowIndexes = [];
     private Guna2Panel? emptyState;
     private Label? emptyTitle, emptySubtitle;
     private Label? sourceEmptyState;
@@ -592,13 +594,15 @@ internal sealed class ExplorerForm : Form
         var copyHead = Theme.Label("SORGULAMA METNİ", 8.5F, true, Theme.Muted); copyHead.Dock = DockStyle.Fill; copyHead.TextAlign = ContentAlignment.MiddleLeft; queryLayout.Controls.Add(copyHead, 0, 0);
         rawBox.Dock = DockStyle.Fill; rawBox.Margin = new Padding(0, 1, 0, 0); rawBox.BorderRadius = 10; rawBox.Font = new Font("Consolas", 9F); rawBox.PlaceholderText = "Sorgu ekranından kopyalanan COPYOBJECT bloğunu buraya yapıştır"; rawBox.FillColor = Theme.Input; rawBox.ForeColor = Theme.Ink; rawBox.BorderColor = Theme.Border; rawBox.PlaceholderForeColor = Theme.Muted; rawBox.FocusedState.BorderColor = Theme.Cyan; rawBox.HoverState.BorderColor = Theme.Purple; queryLayout.Controls.Add(rawBox, 0, 1);
         var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 2), ColumnCount = 5, RowCount = 1 };
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 27)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 18)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 17)); buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); main.Controls.Add(buttons, 0, 2);
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 14)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 18)); buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); main.Controls.Add(buttons, 0, 2);
         saveButton.Dock = DockStyle.Fill; fetchButton.Dock = DockStyle.Fill;
         buttons.Controls.Add(saveButton, 0, 0);
         buttons.Controls.Add(fetchButton, 1, 0); fetchButton.Click += async (_, _) => await FetchAsync();
         var delete = Theme.Button("Kaynağı Sil", false, 110, Theme.Rose); delete.Dock = DockStyle.Fill; buttons.Controls.Add(delete, 2, 0); delete.Click += (_, _) => DeleteSource();
         var settings = Theme.Button("⚙  Ayarlar", false, 120, Color.FromArgb(65, 78, 132)); settings.Dock = DockStyle.Fill;
         settings.Click += (_, _) => OpenSettings(); buttons.Controls.Add(settings, 3, 0);
+        scheduleOffButton.Dock = DockStyle.Fill; scheduleOffButton.Enabled = false;
+        scheduleOffButton.Click += (_, _) => DisableSchedule(); buttons.Controls.Add(scheduleOffButton, 4, 0);
         var tableCard = new Guna2Panel { Dock = DockStyle.Fill, FillColor = Color.FromArgb(242, Theme.Panel), BorderRadius = 17, BorderColor = Theme.Border, BorderThickness = 1, Padding = new Padding(14), ShadowDecoration = { Enabled = true, Depth = 12, Color = Color.FromArgb(45, 4, 10, 31) } }; main.Controls.Add(tableCard, 0, 3);
         var cardLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Color.Transparent, Margin = Padding.Empty };
         cardLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); cardLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); cardLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); cardLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); tableCard.Controls.Add(cardLayout);
@@ -648,7 +652,17 @@ internal sealed class ExplorerForm : Form
         grid.Dock = DockStyle.Fill; grid.BackgroundColor = Theme.Panel; grid.BorderStyle = BorderStyle.None; grid.GridColor = Theme.Border;
         grid.RowHeadersVisible = false; grid.AllowUserToAddRows = false; grid.AllowUserToDeleteRows = false; grid.ReadOnly = true;
         grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill; grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect; grid.MultiSelect = true;
-        grid.RowTemplate.Height = 38; grid.ColumnHeadersHeight = 42; grid.EnableHeadersVisualStyles = false;
+        grid.RowTemplate.Height = 38; grid.ColumnHeadersHeight = 42; grid.EnableHeadersVisualStyles = false; grid.VirtualMode = true;
+        grid.CellValueNeeded += (_, e) =>
+        {
+            if (e.RowIndex < 0 || e.RowIndex >= visibleRowIndexes.Count) return;
+            var sourceIndex = visibleRowIndexes[e.RowIndex]; if (sourceIndex < 0 || sourceIndex >= resultRows.Count) return;
+            var row = resultRows[sourceIndex]; var column = grid.Columns[e.ColumnIndex].Name;
+            if (column == "__at") e.Value = row.At;
+            else if (column == "__kind") e.Value = row.Kind;
+            else if (column.Length > 1 && int.TryParse(column.AsSpan(1), out var fieldIndex) && fieldIndex >= 0 && fieldIndex < fieldNames.Count)
+                e.Value = row.Values.TryGetValue(fieldNames[fieldIndex], out var value) ? ValueText(value) : "";
+        };
         grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(48, 33, 111); grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
         grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 8.5F, FontStyle.Bold); grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(8, 0, 0, 0);
         grid.DefaultCellStyle.BackColor = Theme.Panel; grid.DefaultCellStyle.ForeColor = Theme.Ink; grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(73, 50, 141);
@@ -682,13 +696,14 @@ internal sealed class ExplorerForm : Form
         selected = Database.GetSource(s.Id); if (selected is null) return;
         selected.IsScheduled = s.IsScheduled;
         nameBox.Text = selected.Name; interval.Value = Math.Clamp(selected.Interval, 1, 1439); rawBox.Text = selected.CopyText;
+        scheduleOffButton.Enabled = IsTaskScheduled(selected.Id);
         status.Text = $"LU: {selected.Lu}  |  VIEW: {selected.View}  |  Varsayılan anahtar: {selected.KeyFields}";
         LoadRows();
     }
     private void NewSource()
     {
         selected = null; sourceList.ClearSelected(); nameBox.Clear(); rawBox.Clear(); interval.Value = 60;
-        resultRows.Clear(); fieldNames.Clear(); visibleFields.Clear(); grid.Columns.Clear(); grid.Rows.Clear();
+        resultRows.Clear(); fieldNames.Clear(); visibleFields.Clear(); visibleRowIndexes.Clear(); grid.RowCount = 0; grid.Columns.Clear();
         if (emptyState is not null) emptyState.Visible = true;
         if (emptyTitle is not null) emptyTitle.Text = "Kaynak ekleyerek başlayın";
         if (emptySubtitle is not null) emptySubtitle.Text = "Bir veri kaynağı seçin veya yenisini tanımlayın.";
@@ -798,7 +813,7 @@ internal sealed class ExplorerForm : Form
     }
     private void LoadRows()
     {
-        grid.Rows.Clear(); grid.Columns.Clear(); resultRows = selected is null ? [] : Database.GetSnapshots(selected.Id);
+        grid.RowCount = 0; grid.Columns.Clear(); visibleRowIndexes.Clear(); resultRows = selected is null ? [] : Database.GetSnapshots(selected.Id);
         fieldNames = [];
         foreach (var row in resultRows) foreach (var key in row.Values.Keys) if (!fieldNames.Contains(key)) fieldNames.Add(key);
         var visible = fieldNames;
@@ -821,15 +836,11 @@ internal sealed class ExplorerForm : Form
     private void ApplySearch()
     {
         if (grid.Columns.Count == 0) { count.Text = "0 kayıt"; return; }
-        var q = searchBox.Text.Trim(); grid.Rows.Clear();
+        var q = searchBox.Text.Trim(); visibleRowIndexes.Clear();
         for (int index = 0; index < resultRows.Count; index++)
-        {
-            var row = resultRows[index];
-            if (!RowMatchesSearch(row, q)) continue;
-            var values = new List<object> { row.At, row.Kind }; values.AddRange(visibleFields.Select(k => row.Values.TryGetValue(k, out var v) ? ValueText(v) : ""));
-            var rowIndex = grid.Rows.Add(values.ToArray()); grid.Rows[rowIndex].Tag = index;
-        }
-        count.Text = q.Length > 0 ? $"{grid.Rows.Count} / {resultRows.Count} kayıt" : $"{resultRows.Count} kayıt";
+            if (RowMatchesSearch(resultRows[index], q)) visibleRowIndexes.Add(index);
+        grid.RowCount = visibleRowIndexes.Count; grid.Invalidate();
+        count.Text = q.Length > 0 ? $"{visibleRowIndexes.Count} / {resultRows.Count} kayıt" : $"{resultRows.Count} kayıt";
         if (emptyState is not null)
         {
             emptyState.Visible = grid.Rows.Count == 0;
@@ -847,7 +858,7 @@ internal sealed class ExplorerForm : Form
     private void CopyRows(bool selectedOnly)
     {
         var rows = selectedOnly
-            ? grid.SelectedRows.Cast<DataGridViewRow>().Where(x => x.Tag is int).Select(x => resultRows[(int)x.Tag!]).ToList()
+            ? grid.SelectedRows.Cast<DataGridViewRow>().Where(x => x.Index >= 0 && x.Index < visibleRowIndexes.Count).Select(x => resultRows[visibleRowIndexes[x.Index]]).ToList()
             : resultRows;
         if (rows.Count == 0) { MessageBox.Show(this, "Kopyalanacak sonuç bulunamadı.", "Kopyalama", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
         var keys = visibleFields.Count > 0 ? visibleFields : fieldNames;
@@ -934,7 +945,7 @@ internal static class SmokeTests
             Assert(!config.ContainsKey("max_rows"), "Sorgu yapılandırmasında sabit satır sınırı olmaması");
             Assert(((List<string>)config["columns"]!).Contains("ORDER_NO") && ((object[])config["filters"]!).Length == 1, "Sorgu sütunları ve filtre üretimi");
             Assert(ExplorerForm.BuildTaskCommand(@"C:\Program Files\Miralay\Explorer.exe", source.Id) == $"\"C:\\Program Files\\Miralay\\Explorer.exe\" --sync-source {source.Id}", "Zamanlanmış görev komut satırı");
-            Assert(ExplorerForm.BuildCountPrompt(23414).Contains("23.414 kayıt") && ExplorerForm.BuildCountPrompt(23414).Contains("tüm kayıtlar"), "İlk sorguda tüm eşleşen kayıtlar için onay metni");
+            Assert(ExplorerForm.BuildCountPrompt(23414).Contains("23.414 kayıt") && ExplorerForm.BuildCountPrompt(23414).Contains("Tüm eşleşen kayıtlar indirilecek"), "İlk sorguda tüm eşleşen kayıtlar için onay metni");
             using var searchJson = JsonDocument.Parse("{\"ORDER_NO\":\"1001\",\"CUSTOMER\":\"Örnek\"}");
             var searchRow = new Snapshot("2026-01-01", "CHANGED", searchJson.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value));
             Assert(ExplorerForm.RowMatchesSearch(searchRow, "changed") && ExplorerForm.RowMatchesSearch(searchRow, "örnek") && !ExplorerForm.RowMatchesSearch(searchRow, "bulunmaz"), "Arama eşleşmesi");
