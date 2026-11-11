@@ -15,6 +15,9 @@
     <ApplicationIcon>assets\app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="diagnostics/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <Reference Include="Guna.UI2">
       <HintPath>lib\Guna.UI2.dll</HintPath>
       <Private>false</Private>
