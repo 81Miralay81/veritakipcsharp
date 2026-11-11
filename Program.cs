@@ -910,7 +910,7 @@ internal sealed class ExplorerForm : Form
     }
     internal static string BuildTaskCommand(string exe, long id) => $"\"{exe}\" --sync-source {id}";
     internal static string BuildCountPrompt(long matchingRows) =>
-        $"IFS sorgusunda {matchingRows.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"))} kayıt bulundu.\n\nHenüz veri indirilmedi. İndirmeye başlansın mı?";
+        $"IFS sorgusunda {matchingRows.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"))} kayıt bulundu.\n\nHenüz veri indirilmedi. Tüm eşleşen kayıtlar indirilecek. İndirmeye başlansın mı?";
 }
 
 internal static class SmokeTests
