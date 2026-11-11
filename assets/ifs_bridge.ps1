@@ -60,30 +60,50 @@ try {
   $conn.AutoLogon = $false
   $conn.IgnoreCertificateValidation = $false
 
-  # IFS AP keeps remembered credentials in its own user-scoped persistence store.
-  # The C# host never receives or writes the password itself.
+  # IFS .NET AP credentials are persisted in Windows IsolatedStorage for
+  # the current user. Do not assume a credentials object means a password
+  # was actually restored: check its username/password before suppressing UI.
   $cred = [Ifs.Fnd.AccessProvider.Interactive.FndLoginDialog]::GetStoredCredentials()
   if (!$cred) {
     $cred = New-Object Ifs.Fnd.AccessProvider.Interactive.FndLoginCredentials
   }
+
+  $remember = [bool]$cfg.remember_credentials
+  $storedUser = [string]$cred.UserName
+  $storedPassword = [string]$cred.Password
+  $hasStoredCredentials = (-not [string]::IsNullOrWhiteSpace($storedUser)) -and
+                          (-not [string]::IsNullOrWhiteSpace($storedPassword))
+
   $cred.ConnectTo = [string]$cfg.ifs_url
   $cred.SystemName = [string]$cfg.system_name
   $cred.Language = "tr-TR"
   $cred.ForcedShow = $false
-  $remember = [bool]$cfg.remember_credentials
-  $cred.ShowLoginDialog = -not $remember
   $cred.RememberPassword = $remember
 
+  # Show the IFS login window if there is no complete saved credential pair.
+  # This prevents an empty dialog from appearing on every data fetch while
+  # still allowing the first login (or a rejected/expired password) to prompt.
+  $cred.ShowLoginDialog = (-not $remember) -or (-not $hasStoredCredentials)
+
+  if ($remember -and $cred.RememberPasswordDisabled) {
+    [Console]::Error.WriteLine("IFS istemci ayarlarinda parolayi hatirla ozelligi devre disi. IFS yoneticisinin disableRememberPassword ayarini kontrol etmesi gerekiyor.")
+  }
+
   $dialog = New-Object Ifs.Fnd.AccessProvider.Interactive.FndLoginDialog($conn)
-  # When the user opted in and credentials are stored, let the IFS AP log on
-  # without opening the dialog on each manual or scheduled fetch.
-  # Use the documented IFS AP overload: stored credentials are reused when available.
   $login = $dialog.ShowDialog($cred, $true)
   if ([string]$login -ne "OK" -or !$conn.IsSessionInitialized) {
     throw "IFS oturumu baslatilamadi veya giris iptal edildi."
   }
+
   if ($remember) {
+    # Persist the credentials returned by the successful login dialog.
     [Ifs.Fnd.AccessProvider.Interactive.FndLoginDialog]::StoreCredentials($cred)
+    # Verify persistence immediately without exposing the password.
+    $verifyCred = [Ifs.Fnd.AccessProvider.Interactive.FndLoginDialog]::GetStoredCredentials()
+    if (!$verifyCred -or [string]::IsNullOrWhiteSpace([string]$verifyCred.UserName) -or
+        [string]::IsNullOrWhiteSpace([string]$verifyCred.Password)) {
+      [Console]::Error.WriteLine("IFS girisi basarili ancak kayitli kullanici/parola tekrar okunamadi. IFS istemci ayarlari veya Windows IsolatedStorage kaydi engelliyor olabilir.")
+    }
   }
 
   $cols = ($cfg.columns | ForEach-Object { '"' + [string]$_ + '"' }) -join ", "
