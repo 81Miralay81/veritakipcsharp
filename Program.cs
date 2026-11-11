@@ -448,9 +448,16 @@ internal sealed class ExplorerForm : Form
         BuildUi(); RefreshSources(); sourceList.SelectedIndexChanged += (_, _) => SelectSource();
         if (Database.GetTextPreference("ifs_user") is { Length: > 0 } ifsUser) userLabel.Text = "Kullanıcı: " + ifsUser;
         rawBox.Multiline = true; saveButton.Click += (_, _) => SaveFields();
-        sourceMenu.Items.Add("Bu kayda zamanlayıcı kur", null, (_, _) => Schedule());
+        sourceMenu.Items.Add("Zamanlayıcıyı kur / güncelle", null, (_, _) => Schedule());
+        sourceMenu.Items.Add("Zamanlayıcıyı kapat", null, (_, _) => DisableSchedule());
+        sourceMenu.Items.Add(new ToolStripSeparator());
         sourceMenu.Items.Add("Yeni kaynak", null, (_, _) => NewSource()); sourceMenu.Items.Add("Kaynağı ve yerel geçmişi sil", null, (_, _) => DeleteSource());
-        sourceMenu.Opening += (_, e) => { if (sourceList.SelectedItem is null) e.Cancel = true; };
+        sourceMenu.Opening += (_, e) =>
+        {
+            if (sourceList.SelectedItem is not Source menuSource) { e.Cancel = true; return; }
+            sourceMenu.Items[1].Enabled = IsTaskScheduled(menuSource.Id);
+            sourceMenu.Items[0].Enabled = true;
+        };
         sourceList.MouseDown += (_, e) =>
         {
             if (e.Button != MouseButtons.Right) return;
@@ -818,6 +825,32 @@ internal sealed class ExplorerForm : Form
             RefreshSources(selected.Id);
         }
         catch (Exception ex) { ShowError("Zamanlama hatası\r\n" + ex); }
+    }
+    private void DisableSchedule()
+    {
+        if (selected is null) { MessageBox.Show(this, "Önce kaynak seç.", "Zamanlayıcı", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+        var taskName = $"MiralayIFS_{selected.Id}";
+        if (!IsTaskScheduled(selected.Id))
+        {
+            MessageBox.Show(this, "Bu kaynak için etkin bir zamanlayıcı yok.", "Zamanlayıcı", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        var answer = MessageBox.Show(this,
+            $"'{selected.Name}' kaynağının otomatik veri çekme görevi kapatılsın mı?\n\nGörev silinir; kayıtlı veriler ve kaynak ayarları korunur.",
+            "Zamanlayıcıyı kapat", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (answer != DialogResult.Yes) return;
+        var psi = new ProcessStartInfo("schtasks.exe") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var arg in new[] { "/Delete", "/TN", taskName, "/F" }) psi.ArgumentList.Add(arg);
+        try
+        {
+            using var p = Process.Start(psi) ?? throw new InvalidOperationException("Windows Görev Zamanlayıcısı başlatılamadı.");
+            var stdout = p.StandardOutput.ReadToEnd(); var stderr = p.StandardError.ReadToEnd(); p.WaitForExit();
+            if (p.ExitCode != 0) throw new InvalidOperationException((stderr + Environment.NewLine + stdout).Trim());
+            status.Text = $"'{selected.Name}' kaynağının zamanlayıcısı kapatıldı. Manuel çekim etkilenmez.";
+            RefreshSources(selected.Id);
+            MessageBox.Show(this, "Otomatik veri çekme kapatıldı. Bu kaynak artık arka planda çalışmayacak.", "Zamanlayıcı kapatıldı", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex) { ShowError("Zamanlayıcı kapatılamadı\r\n" + ex); }
     }
     private static bool IsTaskScheduled(long id)
     {
