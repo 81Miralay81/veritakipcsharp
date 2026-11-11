@@ -77,7 +77,8 @@ try {
   $dialog = New-Object Ifs.Fnd.AccessProvider.Interactive.FndLoginDialog($conn)
   # When the user opted in and credentials are stored, let the IFS AP log on
   # without opening the dialog on each manual or scheduled fetch.
-  $login = $dialog.ShowDialog($cred, $true, (-not $remember))
+  # Use the documented IFS AP overload: stored credentials are reused when available.
+  $login = $dialog.ShowDialog($cred, $true)
   if ([string]$login -ne "OK" -or !$conn.IsSessionInitialized) {
     throw "IFS oturumu baslatilamadi veya giris iptal edildi."
   }
