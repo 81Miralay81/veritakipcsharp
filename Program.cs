@@ -814,7 +814,7 @@ internal sealed class ExplorerForm : Form
     }
     internal static string BuildTaskCommand(string exe, long id) => $"\"{exe}\" --sync-source {id}";
     internal static string BuildCountPrompt(long matchingRows) =>
-        $"Sorgu {matchingRows:N0} kayıtla eşleşiyor. Eşleşen tüm kayıtlar alınacak. Devam edilsin mi?";
+        $"Sorgu {matchingRows.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"))} kayıtla eşleşiyor. Eşleşen tüm kayıtlar alınacak. Devam edilsin mi?";
 }
 
 internal static class SmokeTests
