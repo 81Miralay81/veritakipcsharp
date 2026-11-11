@@ -377,10 +377,10 @@ internal static class SyncService
         var watch = Stopwatch.StartNew(); string? line; bool declined = false;
         while (true)
         {
-            var remaining = TimeSpan.FromMinutes(4) - watch.Elapsed;
-            if (remaining <= TimeSpan.Zero) { try { process.Kill(true); } catch { } throw new TimeoutException("Sorgu 4 dakika içinde tamamlanmadı."); }
+            var remaining = TimeSpan.FromMinutes(15) - watch.Elapsed;
+            if (remaining <= TimeSpan.Zero) { try { process.Kill(true); } catch { } throw new TimeoutException("Sorgu 15 dakika içinde tamamlanmadı."); }
             try { line = process.StandardOutput.ReadLineAsync().WaitAsync(remaining).GetAwaiter().GetResult(); }
-            catch (TimeoutException) { try { process.Kill(true); } catch { } throw new TimeoutException("Sorgu 4 dakika içinde tamamlanmadı."); }
+            catch (TimeoutException) { try { process.Kill(true); } catch { } throw new TimeoutException("Sorgu 15 dakika içinde tamamlanmadı."); }
             if (line is null) break;
             if (line.StartsWith("MIRALAY_COUNT:", StringComparison.Ordinal))
             {
@@ -392,7 +392,7 @@ internal static class SyncService
             else if (line == "MIRALAY_CANCELLED") declined = true;
             else if (!string.IsNullOrWhiteSpace(line)) transcript.AppendLine(line);
         }
-        if (!process.WaitForExit(240_000)) { try { process.Kill(true); } catch { } throw new TimeoutException("Sorgu 4 dakika içinde tamamlanmadı."); }
+        if (!process.WaitForExit(900_000)) { try { process.Kill(true); } catch { } throw new TimeoutException("Sorgu 15 dakika içinde tamamlanmadı."); }
         stderr.Wait();
         if (declined) return null;
         if (process.ExitCode != 0 || !File.Exists(output))
