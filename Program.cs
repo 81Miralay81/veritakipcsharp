@@ -744,7 +744,7 @@ internal sealed class ExplorerForm : Form
             if (IsDisposed || !IsHandleCreated) return;
             try
             {
-                BeginInvoke(new Action(() =>
+                Invoke(new Action(() =>
                 {
                     if (progressForm is null || progressForm.IsDisposed)
                     {
