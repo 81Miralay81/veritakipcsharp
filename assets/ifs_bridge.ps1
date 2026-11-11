@@ -165,6 +165,8 @@ try {
   }
   # Buyuk sonuc setlerini tek seferde istemciye yuklemek yerine 1.000'er satirlik
   # sayfalar halinde al. Parcalar kullaniciya gosterilmez; tek sonuc olarak birlestirilir.
+  [Console]::Out.WriteLine("MIRALAY_PROGRESS:0:$matchingCount")
+  [Console]::Out.Flush()
   $chunkSize = 1000
   $rows = [System.Collections.Generic.List[object]]::new()
   for ($offset = 0; $offset -lt $matchingCount; $offset += $chunkSize) {
