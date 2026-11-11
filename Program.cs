@@ -421,7 +421,6 @@ internal sealed class ExplorerForm : Form
     private readonly Guna2TextBox nameBox = new(), rawBox = new(), searchBox = new();
     private readonly Guna2NumericUpDown interval = new() { Minimum = 1, Maximum = 1439, Value = 60, Width = 100, Height = 36, FillColor = Theme.Input, ForeColor = Theme.Ink, BorderColor = Theme.Border, BorderRadius = 6, Font = new Font("Segoe UI", 9F) };
     private readonly Guna2DataGridView grid = new();
-    private readonly Guna2CheckBox rememberCheck = new() { Text = "Kullanıcıyı hatırla", AutoSize = false, ForeColor = Theme.Ink, Font = new Font("Segoe UI", 8.5F), Margin = new Padding(4), CheckedState = { FillColor = Theme.Purple, BorderColor = Theme.Purple }, UncheckedState = { FillColor = Theme.PanelLight, BorderColor = Theme.Border } };
     private readonly Label status = Theme.Label("Bir veri kaynağı seçin veya yeni kaynak ekleyin.", 8.5F, color: Theme.Muted);
     private readonly Label count = Theme.Label("0 kayıt", 8.5F, color: Theme.Muted);
     private readonly Label userLabel = Theme.Label("Kullanıcı: " + Environment.UserName, 9, color: Theme.Muted);
@@ -448,8 +447,6 @@ internal sealed class ExplorerForm : Form
         catch { try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { } }
         BuildUi(); RefreshSources(); sourceList.SelectedIndexChanged += (_, _) => SelectSource();
         if (Database.GetTextPreference("ifs_user") is { Length: > 0 } ifsUser) userLabel.Text = "Kullanıcı: " + ifsUser;
-        rememberCheck.Checked = Database.GetPreference("remember_ifs");
-        rememberCheck.CheckedChanged += (_, _) => Database.SetPreference("remember_ifs", rememberCheck.Checked);
         rawBox.Multiline = true; saveButton.Click += (_, _) => SaveFields();
         sourceMenu.Items.Add("Bu kayda zamanlayıcı kur", null, (_, _) => Schedule());
         sourceMenu.Items.Add("Yeni kaynak", null, (_, _) => NewSource()); sourceMenu.Items.Add("Kaynağı ve yerel geçmişi sil", null, (_, _) => DeleteSource());
@@ -558,14 +555,13 @@ internal sealed class ExplorerForm : Form
         var copyHead = Theme.Label("SORGULAMA METNİ", 8.5F, true, Theme.Muted); copyHead.Dock = DockStyle.Fill; copyHead.TextAlign = ContentAlignment.MiddleLeft; queryLayout.Controls.Add(copyHead, 0, 0);
         rawBox.Dock = DockStyle.Fill; rawBox.Margin = new Padding(0, 1, 0, 0); rawBox.BorderRadius = 10; rawBox.Font = new Font("Consolas", 9F); rawBox.PlaceholderText = "Sorgu ekranından kopyalanan COPYOBJECT bloğunu buraya yapıştır"; rawBox.FillColor = Theme.Input; rawBox.ForeColor = Theme.Ink; rawBox.BorderColor = Theme.Border; rawBox.PlaceholderForeColor = Theme.Muted; rawBox.FocusedState.BorderColor = Theme.Cyan; rawBox.HoverState.BorderColor = Theme.Purple; queryLayout.Controls.Add(rawBox, 0, 1);
         var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 2), ColumnCount = 5, RowCount = 1 };
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 31)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 15)); buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); main.Controls.Add(buttons, 0, 2);
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 27)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 18)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 17)); buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); main.Controls.Add(buttons, 0, 2);
         saveButton.Dock = DockStyle.Fill; fetchButton.Dock = DockStyle.Fill;
         buttons.Controls.Add(saveButton, 0, 0);
         buttons.Controls.Add(fetchButton, 1, 0); fetchButton.Click += async (_, _) => await FetchAsync();
         var delete = Theme.Button("Kaynağı Sil", false, 110, Theme.Rose); delete.Dock = DockStyle.Fill; buttons.Controls.Add(delete, 2, 0); delete.Click += (_, _) => DeleteSource();
-        rememberCheck.Dock = DockStyle.Fill; buttons.Controls.Add(rememberCheck, 3, 0);
         var settings = Theme.Button("⚙  Ayarlar", false, 120, Color.FromArgb(65, 78, 132)); settings.Dock = DockStyle.Fill;
-        settings.Click += (_, _) => OpenSettings(); buttons.Controls.Add(settings, 4, 0);
+        settings.Click += (_, _) => OpenSettings(); buttons.Controls.Add(settings, 3, 0);
         var tableCard = new Guna2Panel { Dock = DockStyle.Fill, FillColor = Color.FromArgb(242, Theme.Panel), BorderRadius = 17, BorderColor = Theme.Border, BorderThickness = 1, Padding = new Padding(14), ShadowDecoration = { Enabled = true, Depth = 12, Color = Color.FromArgb(45, 4, 10, 31) } }; main.Controls.Add(tableCard, 0, 3);
         var cardLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Color.Transparent, Margin = Padding.Empty };
         cardLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); cardLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); cardLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); cardLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); tableCard.Controls.Add(cardLayout);
@@ -891,29 +887,91 @@ internal static class SmokeTests
 
 internal sealed class DatabaseSettingsForm : Form
 {
+    private readonly Guna2CheckBox rememberCredentials = new()
+    {
+        Text = "IFS kullanıcı bilgilerini hatırla",
+        AutoSize = false, Dock = DockStyle.Fill, ForeColor = Theme.Ink,
+        Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+        CheckedState = { FillColor = Theme.Purple, BorderColor = Theme.Purple },
+        UncheckedState = { FillColor = Theme.PanelLight, BorderColor = Theme.Border }
+    };
+
     public DatabaseSettingsForm()
     {
         Text = "Veri Takip - Ayarlar";
-        Size = new Size(760, 310); MinimumSize = new Size(680, 280);
+        Size = new Size(780, 500); MinimumSize = new Size(700, 450);
         StartPosition = FormStartPosition.CenterParent;
         BackColor = Theme.Background; ForeColor = Theme.Ink;
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false;
 
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, Padding = new Padding(22), ColumnCount = 1, RowCount = 4,
+            Dock = DockStyle.Fill, Padding = new Padding(22), ColumnCount = 1, RowCount = 8,
             BackColor = Theme.Background
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         Controls.Add(layout);
 
-        var title = Theme.Label("VERİTABANI KONUMU", 11, true);
-        title.Dock = DockStyle.Fill; title.TextAlign = ContentAlignment.MiddleLeft;
-        layout.Controls.Add(title, 0, 0);
+        var credentialsTitle = Theme.Label("IFS KULLANICI BİLGİLERİ", 11, true);
+        credentialsTitle.Dock = DockStyle.Fill; credentialsTitle.TextAlign = ContentAlignment.MiddleLeft;
+        layout.Controls.Add(credentialsTitle, 0, 0);
+
+        var userBox = new Guna2TextBox
+        {
+            Dock = DockStyle.Fill, ReadOnly = true,
+            Text = Database.GetTextPreference("ifs_user") ?? "Henüz IFS kullanıcısı ile giriş yapılmadı",
+            BorderRadius = 8, FillColor = Theme.Input, ForeColor = Theme.Ink,
+            BorderColor = Theme.Border, Font = new Font("Segoe UI", 9F),
+            PlaceholderText = "IFS kullanıcı adı"
+        };
+        userBox.TextOffset = new Point(8, 0);
+        layout.Controls.Add(userBox, 0, 1);
+
+        var passwordLabel = Theme.Label("Parola (gizli)", 8.5F, true, Theme.Muted);
+        passwordLabel.Dock = DockStyle.Fill; passwordLabel.TextAlign = ContentAlignment.MiddleLeft;
+        layout.Controls.Add(passwordLabel, 0, 2);
+
+        var passwordBox = new Guna2TextBox
+        {
+            Dock = DockStyle.Fill, ReadOnly = true, UseSystemPasswordChar = true,
+            Text = Database.GetPreference("remember_ifs") ? "IFS tarafından saklanan parola" : "Parola bu uygulamada saklanmıyor",
+            BorderRadius = 8, FillColor = Theme.Input, ForeColor = Theme.Muted,
+            BorderColor = Theme.Border, Font = new Font("Segoe UI", 9F)
+        };
+        passwordBox.TextOffset = new Point(8, 0);
+        layout.Controls.Add(passwordBox, 0, 3);
+
+        rememberCredentials.Checked = Database.GetPreference("remember_ifs");
+        rememberCredentials.CheckedChanged += (_, _) =>
+        {
+            Database.SetPreference("remember_ifs", rememberCredentials.Checked);
+            passwordBox.Text = rememberCredentials.Checked
+                ? "IFS tarafından saklanan parola"
+                : "Parola bu uygulamada saklanmıyor";
+        };
+        layout.Controls.Add(rememberCredentials, 0, 4);
+
+        var securityNote = Theme.Label("Parola Veri Takip veritabanına kaydedilmez. Hatırlatma etkinse IFS istemcisinin Windows kullanıcı profiline özel saklama alanı kullanılır. İşaret kaldırılırsa sonraki bağlantıda giriş penceresi açılır.", 8.5F, color: Theme.Muted);
+        securityNote.Dock = DockStyle.Fill; securityNote.TextAlign = ContentAlignment.MiddleLeft;
+        layout.Controls.Add(securityNote, 0, 5);
+
+        var dbTitle = Theme.Label("VERİTABANI KONUMU", 11, true);
+        dbTitle.Dock = DockStyle.Fill; dbTitle.TextAlign = ContentAlignment.MiddleLeft;
+        layout.Controls.Add(dbTitle, 0, 6);
+
+        var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Color.Transparent };
+        bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+        bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+        bottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.Controls.Add(bottom, 0, 7);
 
         var pathBox = new Guna2TextBox
         {
@@ -923,14 +981,14 @@ internal sealed class DatabaseSettingsForm : Form
             Margin = new Padding(0, 4, 0, 8)
         };
         pathBox.TextOffset = new Point(8, 0);
-        layout.Controls.Add(pathBox, 0, 1);
+        bottom.Controls.Add(pathBox, 0, 0);
 
         var actions = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false, BackColor = Color.Transparent, Padding = new Padding(0, 4, 0, 0)
         };
-        layout.Controls.Add(actions, 0, 2);
+        bottom.Controls.Add(actions, 0, 1);
 
         var copyPath = Theme.Button("Yolu Kopyala", false, 140);
         copyPath.Click += (_, _) =>
@@ -948,9 +1006,7 @@ internal sealed class DatabaseSettingsForm : Form
                 Title = "Veritabanı yedeğini kaydet",
                 Filter = "SQLite veritabanı (*.db)|*.db|Tüm dosyalar (*.*)|*.*",
                 FileName = "MiralayIFS-data-yedek.db",
-                AddExtension = true,
-                DefaultExt = "db",
-                OverwritePrompt = true
+                AddExtension = true, DefaultExt = "db", OverwritePrompt = true
             };
             if (save.ShowDialog(this) != DialogResult.OK) return;
             try
@@ -958,14 +1014,13 @@ internal sealed class DatabaseSettingsForm : Form
                 using var source = Database.Open();
                 var destinationBuilder = new SqliteConnectionStringBuilder { DataSource = save.FileName };
                 using var destination = new SqliteConnection(destinationBuilder.ToString());
-                destination.Open();
-                source.BackupDatabase(destination);
-                MessageBox.Show(this, "Veritabanı yedeği başarıyla oluşturuldu.\n\n" + save.FileName,
+                destination.Open(); source.BackupDatabase(destination);
+                MessageBox.Show(this, "Veritabanı yedeği başarıyla oluşturuldu.\\n\\n" + save.FileName,
                     "Yedekleme tamamlandı", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, "Veritabanı yedeği oluşturulamadı.\n\n" + ex.Message,
+                MessageBox.Show(this, "Veritabanı yedeği oluşturulamadı.\\n\\n" + ex.Message,
                     "Yedekleme hatası", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         };
@@ -979,19 +1034,19 @@ internal sealed class DatabaseSettingsForm : Form
                 var folder = Path.GetDirectoryName(Database.PathName);
                 if (string.IsNullOrWhiteSpace(folder)) throw new InvalidOperationException("Veritabanı klasörü belirlenemedi.");
                 Directory.CreateDirectory(folder);
-                Process.Start(new ProcessStartInfo("explorer.exe", "\"" + folder + "\"") { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo("explorer.exe", "\\\"" + folder + "\\\"") { UseShellExecute = true });
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, "Veritabanı klasörü açılamadı.\n\n" + ex.Message,
+                MessageBox.Show(this, "Veritabanı klasörü açılamadı.\\n\\n" + ex.Message,
                     "Klasör açılamadı", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         };
         actions.Controls.Add(openFolder);
 
-        var note = Theme.Label("Veriler Windows kullanıcı profilindeki yerel SQLite dosyasında tutulur. Yedekleme işlemi açık veritabanından güvenli kopya alır; uygulamanın kullandığı dosyayı taşımaz veya değiştirmez.", 8.5F, color: Theme.Muted);
+        var note = Theme.Label("Yerel veriler Windows kullanıcı profilindeki SQLite dosyasında tutulur. Yedekleme açık veritabanından güvenli kopya alır.", 8.5F, color: Theme.Muted);
         note.Dock = DockStyle.Fill; note.TextAlign = ContentAlignment.TopLeft;
-        layout.Controls.Add(note, 0, 3);
+        bottom.Controls.Add(note, 0, 2);
     }
 }
 
