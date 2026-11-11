@@ -134,7 +134,23 @@ try {
     $countCmd.BindVariables.Add($bind)
   }
   $countTable = $countCmd.ExecuteReader()
-  $matchingCount = [long]$countTable.Rows[0][0]
+  $rawCount = $countTable.Rows[0][0]
+  # IFS COUNT(*) sonucunu Int64 yerine FndNumberAttribute olarak dondurebilir.
+  # Attribute nesnesini invariant sayisal metne cevirip guvenli sekilde parse et.
+  $countText = [Convert]::ToString($rawCount, [Globalization.CultureInfo]::InvariantCulture)
+  $parsedCount = [decimal]0
+  $validCount = [decimal]::TryParse(
+    $countText,
+    [Globalization.NumberStyles]::Number,
+    [Globalization.CultureInfo]::InvariantCulture,
+    [ref]$parsedCount
+  )
+  if (-not $validCount -or $parsedCount -lt 0 -or
+      $parsedCount -gt [long]::MaxValue -or
+      [decimal]::Truncate($parsedCount) -ne $parsedCount) {
+    throw "IFS kayit sayisi sayisal deger olarak okunamadi: [$countText]"
+  }
+  $matchingCount = [long]$parsedCount
   [Console]::Out.WriteLine("MIRALAY_COUNT:$matchingCount")
   [Console]::Out.Flush()
   $approval = [Console]::In.ReadLine()
