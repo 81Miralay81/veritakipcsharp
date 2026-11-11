@@ -165,6 +165,7 @@ internal sealed class Field
     public string Name { get; set; } = "";
     public string Expression { get; set; } = "";
     public string Value { get; set; } = "";
+    public string CopyValue { get; set; } = "";
     public bool Queryable { get; set; }
     public bool Enabled { get; set; }
 }
@@ -285,7 +286,7 @@ internal static class CopyObject
             var m = IndexedPattern.Match(line); if (!m.Success) m = PlainPattern.Match(line); if (!m.Success) continue;
             var expression = m.Groups[1].Value.Trim(); var value = m.Groups[2].Value.Trim();
             bool queryable = Regex.IsMatch(expression, @"^[A-Za-z][A-Za-z0-9_]*$");
-            fields.Add(new Field { Name = queryable ? expression.ToUpperInvariant() : expression, Expression = expression, Value = value, Queryable = queryable });
+            fields.Add(new Field { Name = queryable ? expression.ToUpperInvariant() : expression, Expression = expression, CopyValue = value, Value = "", Queryable = queryable });
         }
         if (fields.Count == 0) throw new InvalidOperationException("COPYOBJECT içinde alan satırı bulunamadı.");
         return (lu.Success ? lu.Groups[1].Value : "", view.Groups[1].Value, fields);
@@ -1000,9 +1001,9 @@ internal sealed class FieldEditor : Form
     public List<Field> Fields { get; private set; }
     public FieldEditor(List<Field> fields, int interval)
     {
-        Fields = fields.Select(x => new Field { Name = x.Name, Expression = x.Expression, Value = x.Value, Queryable = x.Queryable, Enabled = x.Enabled }).ToList();
+        Fields = fields.Select(x => new Field { Name = x.Name, Expression = x.Expression, Value = x.Value, CopyValue = x.CopyValue, Queryable = x.Queryable, Enabled = x.Enabled }).ToList();
         Text = "Alanlar ve sorgu koşulları"; Size = new Size(1000, 700); MinimumSize = new Size(820, 520); StartPosition = FormStartPosition.CenterParent; BackColor = Theme.Background; ForeColor = Theme.Ink;
-        var header = Theme.Label("Sadece seçtiğin gerçek alanlar filtre olur. % = bu alan için filtre uygulama. Tarih aralığı: 01.01.2026..31.01.2026", 9, color: Theme.Muted); header.Dock = DockStyle.Top; header.Height = 42; header.Padding = new Padding(10, 12, 0, 0); Controls.Add(header);
+        var header = Theme.Label("1) Alan / sorgu  2) COPYOBJECT içindeki başlangıç değeri  3) Senin filtre değerin. Filtre için kutuyu işaretle. Örnek: DK%-1 = DK ile başlayan ve -1 ile biten tüm değerler. % tek başına filtre uygulamaz. Tarih: 01.01.2026..31.01.2026", 9, color: Theme.Muted); header.Dock = DockStyle.Top; header.Height = 42; header.Padding = new Padding(10, 12, 0, 0); Controls.Add(header);
         grid.Dock = DockStyle.Fill; grid.AllowUserToAddRows = false; grid.RowHeadersVisible = false; grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
         grid.BackgroundColor = Theme.Panel; grid.BorderStyle = BorderStyle.None; grid.GridColor = Theme.Border; grid.EnableHeadersVisualStyles = false; grid.RowTemplate.Height = 36; grid.ColumnHeadersHeight = 40;
         grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(48, 33, 111); grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.White; grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 8.5F, FontStyle.Bold);
@@ -1010,9 +1011,10 @@ internal sealed class FieldEditor : Form
         grid.AlternatingRowsDefaultCellStyle.BackColor = Theme.PanelLight;
         grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "enabled", HeaderText = "Filtre", FillWeight = 45 });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "expression", HeaderText = "Alan / ifade", ReadOnly = true, FillWeight = 120 });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "copy", HeaderText = "COPYOBJECT değeri", ReadOnly = true, FillWeight = 100 });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "value", HeaderText = "Sorguda kullanılacak değer", FillWeight = 130 });
-        foreach (var f in Fields) { var i = grid.Rows.Add(f.Enabled, f.Expression, f.Value, f.Value); grid.Rows[i].Cells[0].ReadOnly = !f.Queryable; grid.Rows[i].Cells[3].ReadOnly = !f.Queryable; }
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "copy", HeaderText = "COPYOBJECT başlangıç değeri", ReadOnly = true, FillWeight = 100 });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "value", HeaderText = "İstediğin filtre değeri", FillWeight = 130 });
+        foreach (var f in Fields) { var copyValue = string.IsNullOrEmpty(f.CopyValue) ? f.Value : f.CopyValue;
+            var i = grid.Rows.Add(f.Enabled, f.Expression, copyValue, f.Value); grid.Rows[i].Cells[0].ReadOnly = !f.Queryable; grid.Rows[i].Cells[3].ReadOnly = !f.Queryable; }
         grid.CellFormatting += (_, e) => { if (e.RowIndex >= 0 && !Fields[e.RowIndex].Queryable) e.CellStyle.ForeColor = Theme.Muted; };
         Controls.Add(grid); var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 57, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8), BackColor = Theme.Background }; Controls.Add(footer);
         var ok = Theme.Button("Seçimleri kaydet", true, 155); ok.Click += (_, _) => Commit(); footer.Controls.Add(ok);
