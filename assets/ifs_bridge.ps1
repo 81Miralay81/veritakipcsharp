@@ -163,21 +163,27 @@ try {
   if ($matchingCount -gt [int]::MaxValue) {
     throw "Eşleşen kayıt sayısı PowerShell/IFS satır sınırını aşıyor: $matchingCount"
   }
-  $limit = [int]$matchingCount
-  $sql = "SELECT $cols FROM $view$whereClause"
-  if ($whereClause) { $sql += " AND ROWNUM <= $limit" }
-  else { $sql += " WHERE ROWNUM <= $limit" }
-  $countCmd.CommandText = $sql
-  $countCmd.MaxRows = $limit
-  $table = $countCmd.ExecuteReader()
-  $rows = @()
-  foreach ($row in $table.Rows) {
-    $item = [ordered]@{}
-    for ($i = 0; $i -lt $table.Columns.Count; $i++) {
-      $value = $row[$i]
-      $item[$table.Columns[$i].Name] = if ($null -eq $value) { $null } else { $value.ToString() }
+  # Buyuk sonuc setlerini tek seferde istemciye yuklemek yerine 1.000'er satirlik
+  # sayfalar halinde al. Parcalar kullaniciya gosterilmez; tek sonuc olarak birlestirilir.
+  $chunkSize = 1000
+  $rows = [System.Collections.Generic.List[object]]::new()
+  for ($offset = 0; $offset -lt $matchingCount; $offset += $chunkSize) {
+    $upper = [Math]::Min([long]($offset + $chunkSize), $matchingCount)
+    $sql = "SELECT * FROM (SELECT Q.*, ROWNUM AS MIRALAY_RN FROM (SELECT $cols FROM $view$whereClause) Q WHERE ROWNUM <= $upper) WHERE MIRALAY_RN > $offset"
+    $countCmd.CommandText = $sql
+    $countCmd.MaxRows = $chunkSize
+    $table = $countCmd.ExecuteReader()
+    foreach ($row in $table.Rows) {
+      $item = [ordered]@{}
+      for ($i = 0; $i -lt $table.Columns.Count; $i++) {
+        $columnName = [string]$table.Columns[$i].Name
+        if ($columnName -ieq "MIRALAY_RN") { continue }
+        $value = $row[$i]
+        $item[$columnName] = if ($null -eq $value) { $null } else { $value.ToString() }
+      }
+      $rows.Add([pscustomobject]$item)
     }
-    $rows += ,([pscustomobject]$item)
+    if ($table.Rows.Count -eq 0) { break }
   }
 
   [pscustomobject]@{
