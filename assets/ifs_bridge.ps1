@@ -160,7 +160,10 @@ try {
     exit 0
   }
 
-  $limit = [Math]::Min([int]$cfg.max_rows, 500)
+  if ($matchingCount -gt [int]::MaxValue) {
+    throw "Eşleşen kayıt sayısı PowerShell/IFS satır sınırını aşıyor: $matchingCount"
+  }
+  $limit = [int]$matchingCount
   $sql = "SELECT $cols FROM $view$whereClause"
   if ($whereClause) { $sql += " AND ROWNUM <= $limit" }
   else { $sql += " WHERE ROWNUM <= $limit" }
