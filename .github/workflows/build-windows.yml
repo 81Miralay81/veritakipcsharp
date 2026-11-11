@@ -35,3 +35,11 @@ jobs:
           path: artifacts/VeriTakip.exe
           if-no-files-found: error
           compression-level: 0
+      - name: Publish IFS diagnostics utility
+        run: dotnet publish diagnostics/MiralayIFSTanilama.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o diagnostics-artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Miralay-IFS-Tanilama
+          path: diagnostics-artifacts/MiralayIFSTanilama.exe
+          if-no-files-found: error
+          compression-level: 0
