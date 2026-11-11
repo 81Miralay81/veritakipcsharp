@@ -321,34 +321,73 @@ internal static class SyncService
             var rows = result.RootElement.TryGetProperty("rows", out var r) && r.ValueKind == JsonValueKind.Array ? r.EnumerateArray().ToList() : [];
             var now = DateTime.Now.ToString("s");
             using var c = Database.Open(); using var tx = c.BeginTransaction();
-            int added = 0, changed = 0;
+            int added = 0, changed = 0, unchanged = 0;
             if (rows.Count == 0)
             {
                 using var empty = c.CreateCommand(); empty.Transaction = tx; empty.CommandText = "UPDATE sources SET last_run=$now,last_status=$status WHERE id=$id";
                 empty.Parameters.AddWithValue("$now", now); empty.Parameters.AddWithValue("$status", "0 kayıt; eşleşen sonuç yok"); empty.Parameters.AddWithValue("$id", id); empty.ExecuteNonQuery();
                 tx.Commit(); message = "Sorgu tamamlandı; bu filtrelerle eşleşen kayıt bulunamadı."; return true;
             }
-            foreach (var row in rows)
+
+            // Önce mevcut son hash değerlerini tek sorguda belleğe al.
+            // Böylece 23 bin satır için 23 bin ayrı SELECT çalıştırılmaz.
+            var latestHashes = new Dictionary<string, string>(StringComparer.Ordinal);
+            using (var read = c.CreateCommand())
             {
-                var canonical = Canonical(row); var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
-                var keyNames = source.KeyFields.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                read.Transaction = tx;
+                read.CommandText = "SELECT row_key,row_hash FROM snapshots WHERE source_id=$id ORDER BY id DESC";
+                read.Parameters.AddWithValue("$id", id);
+                using var reader = read.ExecuteReader();
+                while (reader.Read())
+                {
+                    if (reader.IsDBNull(0) || reader.IsDBNull(1)) continue;
+                    var rowKey = reader.GetString(0);
+                    if (!latestHashes.ContainsKey(rowKey)) latestHashes[rowKey] = reader.GetString(1);
+                }
+            }
+
+            var keyNames = source.KeyFields.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            using var ins = c.CreateCommand();
+            ins.Transaction = tx;
+            ins.CommandText = "INSERT INTO snapshots(source_id,fetched_at,row_json,row_hash,change_type,row_key) VALUES($id,$now,$json,$hash,$kind,$key)";
+            ins.Parameters.AddWithValue("$id", id);
+            ins.Parameters.AddWithValue("$now", now);
+            ins.Parameters.Add("$json", SqliteType.Text);
+            ins.Parameters.Add("$hash", SqliteType.Text);
+            ins.Parameters.Add("$kind", SqliteType.Text);
+            ins.Parameters.Add("$key", SqliteType.Text);
+            ins.Prepare();
+
+            for (int index = 0; index < rows.Count; index++)
+            {
+                var row = rows[index];
+                var canonical = Canonical(row);
+                var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
                 var key = keyNames.Length > 0 && keyNames.All(k => row.TryGetProperty(k, out _))
                     ? CanonicalKey(row, keyNames)
                     : canonical;
-                using var prev = c.CreateCommand(); prev.Transaction = tx; prev.CommandText = "SELECT row_hash FROM snapshots WHERE source_id=$id AND row_key=$key ORDER BY id DESC LIMIT 1";
-                prev.Parameters.AddWithValue("$id", id); prev.Parameters.AddWithValue("$key", key); var old = prev.ExecuteScalar() as string;
+
+                var old = latestHashes.TryGetValue(key, out var previousHash) ? previousHash : null;
                 var kind = old is null ? "NEW" : old == hash ? "UNCHANGED" : "CHANGED";
-                if (kind == "NEW") added++; if (kind == "CHANGED") changed++;
-                using var ins = c.CreateCommand(); ins.Transaction = tx; ins.CommandText = "INSERT INTO snapshots(source_id,fetched_at,row_json,row_hash,change_type,row_key) VALUES($id,$now,$json,$hash,$kind,$key)";
-                ins.Parameters.AddWithValue("$id", id); ins.Parameters.AddWithValue("$now", now); ins.Parameters.AddWithValue("$json", row.GetRawText());
-                ins.Parameters.AddWithValue("$hash", hash); ins.Parameters.AddWithValue("$kind", kind); ins.Parameters.AddWithValue("$key", key); ins.ExecuteNonQuery();
+                latestHashes[key] = hash;
+                if (kind == "UNCHANGED") { unchanged++; continue; }
+                if (kind == "NEW") added++; else changed++;
+
+                ins.Parameters["$now"].Value = now;
+                ins.Parameters["$json"].Value = row.GetRawText();
+                ins.Parameters["$hash"].Value = hash;
+                ins.Parameters["$kind"].Value = kind;
+                ins.Parameters["$key"].Value = key;
+                ins.ExecuteNonQuery();
             }
             using (var upd = c.CreateCommand())
             {
                 upd.Transaction = tx; upd.CommandText = "UPDATE sources SET last_run=$now,last_status=$status WHERE id=$id";
-                upd.Parameters.AddWithValue("$now", now); upd.Parameters.AddWithValue("$status", $"{rows.Count} kayıt; yeni {added}; değişen {changed}"); upd.Parameters.AddWithValue("$id", id); upd.ExecuteNonQuery();
+                upd.Parameters.AddWithValue("$now", now); upd.Parameters.AddWithValue("$status", $"{rows.Count} sorgulandı; yeni {added}; değişen {changed}; aynı {unchanged}"); upd.Parameters.AddWithValue("$id", id); upd.ExecuteNonQuery();
             }
-            tx.Commit(); message = $"{rows.Count} kayıt alındı. Yeni: {added}, değişen: {changed}"; return true;
+            tx.Commit();
+            message = $"{rows.Count} kayıt karşılaştırıldı. Yeni: {added}, değişen: {changed}, değişmeyen: {unchanged} (yeniden kaydedilmedi).";
+            return true;
         }
         catch (Exception ex) { message = ex.ToString(); return false; }
     }
