@@ -80,6 +80,17 @@ try {
     $cred = New-Object Ifs.Fnd.AccessProvider.Interactive.FndLoginCredentials
   }
 
+  # Capture the actual IFS credential API shape. Never log credential values.
+  $loginDialogType = [Ifs.Fnd.AccessProvider.Interactive.FndLoginDialog]
+  $credentialType = $cred.GetType()
+  $credentialProperties = @($credentialType.GetProperties([Reflection.BindingFlags]::Public -bor [Reflection.BindingFlags]::Instance) | ForEach-Object {
+    [ordered]@{ name = $_.Name; type = $_.PropertyType.FullName; can_read = $_.CanRead; can_write = $_.CanWrite }
+  })
+  $credentialMethods = @($loginDialogType.GetMethods([Reflection.BindingFlags]::Public -bor [Reflection.BindingFlags]::Static) | Where-Object { $_.Name -match 'Credential|Login' } | ForEach-Object {
+    [ordered]@{ name = $_.Name; parameters = @($_.GetParameters() | ForEach-Object { $_.ParameterType.FullName }) }
+  })
+  Write-IFSLog "credential_api_shape" @{ credential_type = $credentialType.FullName; properties = $credentialProperties; static_methods = $credentialMethods }
+
   $remember = [bool]$cfg.remember_credentials
   $storedUser = [string]$cred.UserName
   $storedPassword = [string]$cred.Password
@@ -104,19 +115,45 @@ try {
 
   $dialog = New-Object Ifs.Fnd.AccessProvider.Interactive.FndLoginDialog($conn)
   $login = $dialog.ShowDialog($cred, $true)
-  Write-IFSLog "login_result" @{ result = [string]$login; session_initialized = [bool]$conn.IsSessionInitialized; user_id_present = (-not [string]::IsNullOrWhiteSpace([string]$dialog.UserId)) }
+  $postDialogUser = [string]$cred.UserName
+  $postDialogPassword = [string]$cred.Password
+  $dialogCredentialObjects = @()
+  foreach ($property in $dialog.GetType().GetProperties([Reflection.BindingFlags]::Public -bor [Reflection.BindingFlags]::Instance)) {
+    if (-not $property.CanRead -or $property.GetIndexParameters().Count -gt 0) { continue }
+    try {
+      $propertyValue = $property.GetValue($dialog, $null)
+      if ($null -ne $propertyValue -and $property.PropertyType.FullName -match 'Credential') {
+        $dialogCredentialObjects += [ordered]@{ property = $property.Name; type = $propertyValue.GetType().FullName }
+      }
+    } catch { }
+  }
+  Write-IFSLog "login_result" @{ result = [string]$login; session_initialized = [bool]$conn.IsSessionInitialized; user_id_present = (-not [string]::IsNullOrWhiteSpace([string]$dialog.UserId)); input_credential_has_username_after_dialog = (-not [string]::IsNullOrWhiteSpace($postDialogUser)); input_credential_has_password_after_dialog = (-not [string]::IsNullOrWhiteSpace($postDialogPassword)); dialog_credential_objects = $dialogCredentialObjects }
   if ([string]$login -ne "OK" -or !$conn.IsSessionInitialized) {
     throw "IFS oturumu baslatilamadi veya giris iptal edildi."
   }
 
   if ($remember) {
-    # Persist the credentials returned by the successful login dialog.
-    [Ifs.Fnd.AccessProvider.Interactive.FndLoginDialog]::StoreCredentials($cred)
-    # Verify persistence immediately without exposing the password.
-    $verifyCred = [Ifs.Fnd.AccessProvider.Interactive.FndLoginDialog]::GetStoredCredentials()
-    if (!$verifyCred -or [string]::IsNullOrWhiteSpace([string]$verifyCred.UserName) -or
-        [string]::IsNullOrWhiteSpace([string]$verifyCred.Password)) {
-      [Console]::Error.WriteLine("IFS girisi basarili ancak kayitli kullanici/parola tekrar okunamadi. IFS istemci ayarlari veya Windows IsolatedStorage kaydi engelliyor olabilir.")
+    # Record exactly what the login dialog returned before attempting persistence.
+    Write-IFSLog "credential_object_after_login" @{ type = $cred.GetType().FullName; has_username = (-not [string]::IsNullOrWhiteSpace([string]$cred.UserName)); has_password = (-not [string]::IsNullOrWhiteSpace([string]$cred.Password)); remember_password = [bool]$cred.RememberPassword; remember_password_disabled = [bool]$cred.RememberPasswordDisabled }
+    try {
+      [Ifs.Fnd.AccessProvider.Interactive.FndLoginDialog]::StoreCredentials($cred)
+      Write-IFSLog "store_credentials_call" @{ status = "returned" }
+    }
+    catch {
+      Write-IFSLog "store_credentials_call" @{ status = "threw"; exception_type = $_.Exception.GetType().FullName; message = $_.Exception.Message }
+    }
+    # Verify persistence immediately without exposing username or password.
+    try {
+      $verifyCred = [Ifs.Fnd.AccessProvider.Interactive.FndLoginDialog]::GetStoredCredentials()
+      $verifyUser = if ($verifyCred) { [string]$verifyCred.UserName } else { "" }
+      $verifyPassword = if ($verifyCred) { [string]$verifyCred.Password } else { "" }
+      Write-IFSLog "credentials_after_store" @{ stored_object = [bool]$verifyCred; has_username = (-not [string]::IsNullOrWhiteSpace($verifyUser)); has_password = (-not [string]::IsNullOrWhiteSpace($verifyPassword)); remember_password = if ($verifyCred) { [bool]$verifyCred.RememberPassword } else { $false } }
+      if ([string]::IsNullOrWhiteSpace($verifyUser) -or [string]::IsNullOrWhiteSpace($verifyPassword)) {
+        [Console]::Error.WriteLine("IFS girisi basarili ancak IFS istemci API'si kullanici/parola bilgisini kayit sonrasi geri okuyamadi. Tanilama kaydinda credential_api_shape ve credential_object_after_login olaylarini kontrol edin.")
+      }
+    }
+    catch {
+      Write-IFSLog "credentials_after_store_error" @{ exception_type = $_.Exception.GetType().FullName; message = $_.Exception.Message }
     }
   }
 
