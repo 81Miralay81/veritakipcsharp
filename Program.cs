@@ -667,8 +667,17 @@ internal sealed class ExplorerForm : Form
             var parsed = CopyObject.Parse(rawBox.Text);
             if (selected is not null)
             {
-                var old = selected.Fields.ToDictionary(x => x.Expression, StringComparer.Ordinal);
-                foreach (var f in parsed.Fields) if (old.TryGetValue(f.Expression, out var previous)) { f.Enabled = previous.Enabled; f.Value = previous.Value; }
+                // COPYOBJECT içinde aynı fonksiyon ifadesi birden fazla satırda bulunabilir.
+                // Önceki alanları tekilleştirerek tekrar düzenleme sırasında anahtar çakışmasını önle.
+                var old = selected.Fields
+                    .GroupBy(x => x.Expression, StringComparer.Ordinal)
+                    .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+                foreach (var f in parsed.Fields)
+                    if (old.TryGetValue(f.Expression, out var previous))
+                    {
+                        f.Enabled = previous.Enabled;
+                        f.Value = previous.Value;
+                    }
             }
             using var dialog = new FieldEditor(parsed.Fields, (int)interval.Value);
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
