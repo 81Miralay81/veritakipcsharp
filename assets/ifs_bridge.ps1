@@ -57,7 +57,7 @@ try {
   $conn = New-Object Ifs.Fnd.AccessProvider.FndConnection
   $conn.ConnectionString = [string]$cfg.ifs_url
   $conn.InteractiveMode = $true
-  $conn.AutoLogon = $false
+  $conn.AutoLogon = $true
   $conn.IgnoreCertificateValidation = $false
 
   # IFS AP keeps remembered credentials in its own user-scoped persistence store.
