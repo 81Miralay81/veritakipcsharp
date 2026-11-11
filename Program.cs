@@ -230,6 +230,12 @@ internal static class Database
         return result;
     }
     public static Source? GetSource(long id) => GetSources().FirstOrDefault(x => x.Id == id);
+    public static bool HasRun(long id)
+    {
+        using var c = Open(); using var q = c.CreateCommand();
+        q.CommandText = "SELECT EXISTS(SELECT 1 FROM sources WHERE id=$id AND last_run IS NOT NULL AND last_run <> '')";
+        q.Parameters.AddWithValue("$id", id); return Convert.ToInt64(q.ExecuteScalar()) == 1;
+    }
     public static void Save(Source s)
     {
         using var c = Open(); using var q = c.CreateCommand();
@@ -248,7 +254,7 @@ internal static class Database
     public static List<Snapshot> GetSnapshots(long id)
     {
         using var c = Open(); using var q = c.CreateCommand();
-        q.CommandText = "SELECT fetched_at,change_type,row_json FROM snapshots WHERE source_id=$id ORDER BY id DESC LIMIT 500"; q.Parameters.AddWithValue("$id", id);
+        q.CommandText = "SELECT fetched_at,change_type,row_json FROM snapshots WHERE source_id=$id ORDER BY id DESC"; q.Parameters.AddWithValue("$id", id);
         using var r = q.ExecuteReader(); var rows = new List<Snapshot>();
         while (r.Read())
         {
@@ -288,7 +294,6 @@ internal static class CopyObject
 
 internal static class SyncService
 {
-    public const int MaxRows = 500;
     private const string IfsUrl = "https://ifs10app2.teknorot.com:48080";
     private const string SystemName = "TEKNOROT IFS10.10 PROD";
     public static Dictionary<string, object> MakeConfig(Source s)
@@ -297,7 +302,7 @@ internal static class SyncService
         if (columns.Count == 0) throw new InvalidOperationException("Sorgulanabilir gerçek tablo alanı bulunamadı.");
         var filters = s.Fields.Where(x => x.Queryable && x.Enabled && !string.IsNullOrWhiteSpace(x.Value) && x.Value.Trim() != "%")
             .Select(x => new { name = x.Name, value = x.Value.Trim() }).ToArray();
-        return new() { ["view"] = s.View, ["columns"] = columns, ["filters"] = filters, ["max_rows"] = MaxRows, ["ifs_url"] = IfsUrl, ["system_name"] = SystemName, ["remember_credentials"] = Database.GetPreference("remember_ifs") };
+        return new() { ["view"] = s.View, ["columns"] = columns, ["filters"] = filters, ["ifs_url"] = IfsUrl, ["system_name"] = SystemName, ["remember_credentials"] = Database.GetPreference("remember_ifs") };
     }
     public static bool Execute(long id, out string message)
         => Execute(id, null, out message);
@@ -310,7 +315,7 @@ internal static class SyncService
             if (result is null) { message = "Sorgu durduruldu. Koşulları düzenleyip yeniden deneyebilirsin."; return true; }
             if (result.RootElement.TryGetProperty("ifs_user", out var user) && user.ValueKind == JsonValueKind.String)
                 Database.SetTextPreference("ifs_user", user.GetString() ?? "");
-            var rows = result.RootElement.TryGetProperty("rows", out var r) && r.ValueKind == JsonValueKind.Array ? r.EnumerateArray().Take(MaxRows).ToList() : [];
+            var rows = result.RootElement.TryGetProperty("rows", out var r) && r.ValueKind == JsonValueKind.Array ? r.EnumerateArray().ToList() : [];
             var now = DateTime.Now.ToString("s");
             using var c = Database.Open(); using var tx = c.BeginTransaction();
             int added = 0, changed = 0;
@@ -680,13 +685,17 @@ internal sealed class ExplorerForm : Form
     {
         if (selected is null) { MessageBox.Show(this, "Önce kaynağı kaydet.", "Kaynak", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
         var id = selected.Id;
+        var firstRun = !Database.HasRun(id);
+        Func<long, bool>? confirmCount = firstRun
+            ? n => (bool)Invoke(new Func<bool>(() =>
+                MessageBox.Show(this, BuildCountPrompt(n), "İlk sorgu onayı", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes))
+            : null;
         ToggleBusy(true); status.Text = "Kayıtlar sayılıyor; giriş penceresi açılabilir...";
         try
         {
             var result = await Task.Run(() =>
             {
-                var ok = SyncService.Execute(id, n => (bool)Invoke(new Func<bool>(() =>
-                    MessageBox.Show(this, BuildCountPrompt(n), "Kayıt sayımı", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)), out var msg);
+                var ok = SyncService.Execute(id, confirmCount, out var msg);
                 return (ok, msg);
             });
             status.Text = result.msg;
@@ -804,9 +813,8 @@ internal sealed class ExplorerForm : Form
         catch { return false; }
     }
     internal static string BuildTaskCommand(string exe, long id) => $"\"{exe}\" --sync-source {id}";
-    internal static string BuildCountPrompt(long matchingRows) => matchingRows > SyncService.MaxRows
-        ? $"Sorgu {matchingRows:N0} kayıtla eşleşiyor. En fazla 500 satır alınabilir. İlk 500 satırı çekelim mi?"
-        : $"{matchingRows:N0} kayıt çekilecek. Uygulansın mı?";
+    internal static string BuildCountPrompt(long matchingRows) =>
+        $"Sorgu {matchingRows:N0} kayıtla eşleşiyor. Eşleşen tüm kayıtlar alınacak. Devam edilsin mi?";
 }
 
 internal static class SmokeTests
@@ -827,10 +835,10 @@ internal static class SmokeTests
             var loaded = Database.GetSource(source.Id)!;
             Assert(loaded.Fields.Count == 3 && loaded.Fields[0].Enabled && loaded.Fields[0].Value == "1001", "Kaynak ve filtre alanı kalıcılığı");
             var config = SyncService.MakeConfig(loaded);
-            Assert((int)config["max_rows"] == 500, "500 satır üst sınır ayarı");
+            Assert(!config.ContainsKey("max_rows"), "Sorgu yapılandırmasında sabit satır sınırı olmaması");
             Assert(((List<string>)config["columns"]!).Contains("ORDER_NO") && ((object[])config["filters"]!).Length == 1, "Sorgu sütunları ve filtre üretimi");
             Assert(ExplorerForm.BuildTaskCommand(@"C:\Program Files\Miralay\Explorer.exe", source.Id) == $"\"C:\\Program Files\\Miralay\\Explorer.exe\" --sync-source {source.Id}", "Zamanlanmış görev komut satırı");
-            Assert(ExplorerForm.BuildCountPrompt(27) == "27 kayıt çekilecek. Uygulansın mı?" && ExplorerForm.BuildCountPrompt(520).Contains("520 kayıt") && ExplorerForm.BuildCountPrompt(520).Contains("İlk 500"), "Gerçek kayıt sayısı onayı ve 500 üst sınırı");
+            Assert(ExplorerForm.BuildCountPrompt(23414).Contains("23.414 kayıt") && ExplorerForm.BuildCountPrompt(23414).Contains("tüm kayıtlar"), "İlk sorguda tüm eşleşen kayıtlar için onay metni");
             using var searchJson = JsonDocument.Parse("{\"ORDER_NO\":\"1001\",\"CUSTOMER\":\"Örnek\"}");
             var searchRow = new Snapshot("2026-01-01", "CHANGED", searchJson.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value));
             Assert(ExplorerForm.RowMatchesSearch(searchRow, "changed") && ExplorerForm.RowMatchesSearch(searchRow, "örnek") && !ExplorerForm.RowMatchesSearch(searchRow, "bulunmaz"), "Arama eşleşmesi");
@@ -839,8 +847,8 @@ internal static class SmokeTests
             using var keyJson = JsonDocument.Parse("{\"ORDER_NO\":\"1001\",\"CONTRACT\":\"TR\"}");
             Assert(SyncService.CanonicalKey(keyJson.RootElement, new[] { "ORDER_NO", "CONTRACT" }) == "[\"1001\", \"TR\"]", "Python row_key JSON biçimi");
             var rows = JsonDocument.Parse("[" + string.Join(",", Enumerable.Range(0, 510).Select(i => $"{{\"NO\":\"{i}\"}}")) + "]");
-            var capped = rows.RootElement.EnumerateArray().Take(SyncService.MaxRows).Count();
-            Assert(capped == 500, "500 satır güvenlik sınırı");
+            var uncapped = rows.RootElement.EnumerateArray().ToList();
+            Assert(uncapped.Count == 510, "Sorgu sonuçlarında sabit 500 satır sınırı olmaması");
             using (var c = Database.Open()) using (var q = c.CreateCommand())
             {
                 q.CommandText = "INSERT INTO snapshots(source_id,fetched_at,row_json,row_hash,change_type,row_key) VALUES($id,'2026-01-01T00:00:00','{\"ORDER_NO\":\"1001\"}','x','NEW','1001')";
