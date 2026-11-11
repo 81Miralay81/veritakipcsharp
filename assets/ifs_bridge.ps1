@@ -183,6 +183,8 @@ try {
       }
       $rows.Add([pscustomobject]$item)
     }
+    [Console]::Out.WriteLine("MIRALAY_PROGRESS:$($rows.Count):$matchingCount")
+    [Console]::Out.Flush()
     if ($table.Rows.Count -eq 0) { break }
   }
 
