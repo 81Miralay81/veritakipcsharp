@@ -4,6 +4,17 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
+# Read-only diagnostic log shared with the separate Miralay IFS Tanilama app.
+$diagDir = Join-Path $env:LOCALAPPDATA "MiralayIFS\\Diagnostics"
+try { New-Item -ItemType Directory -Path $diagDir -Force | Out-Null } catch { }
+$diagFile = Join-Path $diagDir ("bridge-" + (Get-Date -Format "yyyyMMdd") + ".jsonl")
+function Write-IFSLog([string]$eventName, [object]$data) {
+  try {
+    $entry = [ordered]@{ time = (Get-Date).ToString("o"); event = $eventName; data = $data }
+    ($entry | ConvertTo-Json -Depth 6 -Compress) | Add-Content -LiteralPath $diagFile -Encoding UTF8
+  } catch { }
+}
+
 function Test-IFSIdentifier([string]$name) {
   if ([string]::IsNullOrEmpty($name)) { return $false }
   for ($i = 0; $i -lt $name.Length; $i++) {
@@ -18,6 +29,7 @@ function Test-IFSIdentifier([string]$name) {
 
 try {
   $cfg = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  Write-IFSLog "bridge_started" @{ view = [string]$cfg.view; columns = @($cfg.columns).Count; filter_fields = @($cfg.filters | ForEach-Object { [string]$_.name }); remember_credentials = [bool]$cfg.remember_credentials }
 
   # VIEW adini temizle ve ASCII karakterleriyle dogrula.
   $view = ([string]$cfg.view).Trim().Trim([char]0xFEFF).Trim()
@@ -73,6 +85,7 @@ try {
   $storedPassword = [string]$cred.Password
   $hasStoredCredentials = (-not [string]::IsNullOrWhiteSpace($storedUser)) -and
                           (-not [string]::IsNullOrWhiteSpace($storedPassword))
+  Write-IFSLog "credentials_checked" @{ stored_object = [bool]$cred; has_username = (-not [string]::IsNullOrWhiteSpace($storedUser)); has_password = (-not [string]::IsNullOrWhiteSpace($storedPassword)); remember_enabled = $remember }
 
   $cred.ConnectTo = [string]$cfg.ifs_url
   $cred.SystemName = [string]$cfg.system_name
@@ -91,6 +104,7 @@ try {
 
   $dialog = New-Object Ifs.Fnd.AccessProvider.Interactive.FndLoginDialog($conn)
   $login = $dialog.ShowDialog($cred, $true)
+  Write-IFSLog "login_result" @{ result = [string]$login; session_initialized = [bool]$conn.IsSessionInitialized; user_id_present = (-not [string]::IsNullOrWhiteSpace([string]$dialog.UserId)) }
   if ([string]$login -ne "OK" -or !$conn.IsSessionInitialized) {
     throw "IFS oturumu baslatilamadi veya giris iptal edildi."
   }
@@ -154,6 +168,8 @@ try {
   foreach ($bind in $binds) {
     $countCmd.BindVariables.Add($bind)
   }
+  Write-IFSLog "count_query_started" @{ view = $view; selected_columns = @($cfg.columns); filter_fields = @($cfg.filters | ForEach-Object { [string]$_.name }); sql = $countCmd.CommandText }
+  $queryWatch = [Diagnostics.Stopwatch]::StartNew()
   $countTable = $countCmd.ExecuteReader()
   $rawCount = $countTable.Rows[0][0]
   # IFS COUNT(*) sonucunu Int64 yerine FndNumberAttribute olarak dondurebilir.
@@ -172,6 +188,8 @@ try {
     throw "IFS kayit sayisi sayisal deger olarak okunamadi: [$countText]"
   }
   $matchingCount = [long]$parsedCount
+  $queryWatch.Stop()
+  Write-IFSLog "count_query_completed" @{ matching_rows = $matchingCount; elapsed_ms = $queryWatch.ElapsedMilliseconds }
   [Console]::Out.WriteLine("MIRALAY_COUNT:$matchingCount")
   [Console]::Out.Flush()
   $approval = [Console]::In.ReadLine()
@@ -211,6 +229,7 @@ try {
     if ($table.Rows.Count -eq 0) { break }
   }
 
+  Write-IFSLog "data_query_completed" @{ rows = $rows.Count; expected_rows = $matchingCount }
   [pscustomobject]@{
     rows = $rows
     view = $view
@@ -220,6 +239,7 @@ try {
   exit 0
 }
 catch {
+  Write-IFSLog "bridge_error" @{ message = $_.Exception.Message; category = [string]$_.CategoryInfo }
   [Console]::Error.WriteLine(($_ | Out-String))
   exit 1
 }
