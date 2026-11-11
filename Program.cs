@@ -487,7 +487,7 @@ internal sealed class ExplorerForm : Form
         sourceMenu.Opening += (_, e) =>
         {
             if (sourceList.SelectedItem is not Source menuSource) { e.Cancel = true; return; }
-            sourceMenu.Items[1].Enabled = IsTaskScheduled(menuSource.Id);
+            sourceMenu.Items[1].Enabled = true;
             sourceMenu.Items[0].Enabled = true;
         };
         sourceList.MouseDown += (_, e) =>
@@ -696,7 +696,7 @@ internal sealed class ExplorerForm : Form
         selected = Database.GetSource(s.Id); if (selected is null) return;
         selected.IsScheduled = s.IsScheduled;
         nameBox.Text = selected.Name; interval.Value = Math.Clamp(selected.Interval, 1, 1439); rawBox.Text = selected.CopyText;
-        scheduleOffButton.Enabled = IsTaskScheduled(selected.Id);
+        scheduleOffButton.Enabled = true;
         status.Text = $"LU: {selected.Lu}  |  VIEW: {selected.View}  |  Varsayılan anahtar: {selected.KeyFields}";
         LoadRows();
     }
@@ -785,7 +785,8 @@ internal sealed class ExplorerForm : Form
             {
                 selected = Database.GetSource(id) ?? selected;
                 if (Database.GetTextPreference("ifs_user") is { Length: > 0 } currentUser) userLabel.Text = "Kullanıcı: " + currentUser;
-                LoadRows(); MessageBox.Show(this, result.msg, "Tamamlandı", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                var loadedRows = await Task.Run(() => Database.GetSnapshots(id));
+                LoadRows(loadedRows); MessageBox.Show(this, result.msg, "Tamamlandı", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             else ShowError(result.msg);
         }
@@ -811,9 +812,9 @@ internal sealed class ExplorerForm : Form
         var copy = Theme.Button("Tüm hatayı kopyala", false, 160); copy.Click += (_, _) => Clipboard.SetText(detail); bar.Controls.Add(copy);
         form.ShowDialog(this);
     }
-    private void LoadRows()
+    private void LoadRows(List<Snapshot>? preloadedRows = null)
     {
-        grid.RowCount = 0; grid.Columns.Clear(); visibleRowIndexes.Clear(); resultRows = selected is null ? [] : Database.GetSnapshots(selected.Id);
+        grid.RowCount = 0; grid.Columns.Clear(); visibleRowIndexes.Clear(); resultRows = preloadedRows ?? (selected is null ? [] : Database.GetSnapshots(selected.Id));
         fieldNames = [];
         foreach (var row in resultRows) foreach (var key in row.Values.Keys) if (!fieldNames.Contains(key)) fieldNames.Add(key);
         var visible = fieldNames;
