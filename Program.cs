@@ -556,13 +556,15 @@ internal sealed class ExplorerForm : Form
         queryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); queryLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); queryLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); editorLayout.Controls.Add(queryLayout, 0, 1);
         var copyHead = Theme.Label("SORGULAMA METNİ", 8.5F, true, Theme.Muted); copyHead.Dock = DockStyle.Fill; copyHead.TextAlign = ContentAlignment.MiddleLeft; queryLayout.Controls.Add(copyHead, 0, 0);
         rawBox.Dock = DockStyle.Fill; rawBox.Margin = new Padding(0, 1, 0, 0); rawBox.BorderRadius = 10; rawBox.Font = new Font("Consolas", 9F); rawBox.PlaceholderText = "Sorgu ekranından kopyalanan COPYOBJECT bloğunu buraya yapıştır"; rawBox.FillColor = Theme.Input; rawBox.ForeColor = Theme.Ink; rawBox.BorderColor = Theme.Border; rawBox.PlaceholderForeColor = Theme.Muted; rawBox.FocusedState.BorderColor = Theme.Cyan; rawBox.HoverState.BorderColor = Theme.Purple; queryLayout.Controls.Add(rawBox, 0, 1);
-        var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 2), ColumnCount = 4, RowCount = 1 };
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 24)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 18)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 24)); buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); main.Controls.Add(buttons, 0, 2);
+        var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 2), ColumnCount = 5, RowCount = 1 };
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 31)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 15)); buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); main.Controls.Add(buttons, 0, 2);
         saveButton.Dock = DockStyle.Fill; fetchButton.Dock = DockStyle.Fill;
         buttons.Controls.Add(saveButton, 0, 0);
         buttons.Controls.Add(fetchButton, 1, 0); fetchButton.Click += async (_, _) => await FetchAsync();
         var delete = Theme.Button("Kaynağı Sil", false, 110, Theme.Rose); delete.Dock = DockStyle.Fill; buttons.Controls.Add(delete, 2, 0); delete.Click += (_, _) => DeleteSource();
         rememberCheck.Dock = DockStyle.Fill; buttons.Controls.Add(rememberCheck, 3, 0);
+        var settings = Theme.Button("⚙  Ayarlar", false, 120, Color.FromArgb(65, 78, 132)); settings.Dock = DockStyle.Fill;
+        settings.Click += (_, _) => OpenSettings(); buttons.Controls.Add(settings, 4, 0);
         var tableCard = new Guna2Panel { Dock = DockStyle.Fill, FillColor = Color.FromArgb(242, Theme.Panel), BorderRadius = 17, BorderColor = Theme.Border, BorderThickness = 1, Padding = new Padding(14), ShadowDecoration = { Enabled = true, Depth = 12, Color = Color.FromArgb(45, 4, 10, 31) } }; main.Controls.Add(tableCard, 0, 3);
         var cardLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Color.Transparent, Margin = Padding.Empty };
         cardLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); cardLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); cardLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); cardLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); tableCard.Controls.Add(cardLayout);
@@ -585,6 +587,12 @@ internal sealed class ExplorerForm : Form
         var footer = Theme.Label("Salt okunur  •  Son çekilen kayıtlar", 8.5F, color: Theme.Muted); footer.Dock = DockStyle.Fill; footer.TextAlign = ContentAlignment.MiddleLeft; cardLayout.Controls.Add(footer, 0, 2);
         status.Dock = DockStyle.Fill; status.TextAlign = ContentAlignment.MiddleLeft; main.Controls.Add(status, 0, 4);
     }
+    private void OpenSettings()
+    {
+        using var dialog = new DatabaseSettingsForm();
+        dialog.ShowDialog(this);
+    }
+
     private void BuildEmptyState(Control host)
     {
         emptyState = new Guna2Panel
@@ -869,6 +877,112 @@ internal static class SmokeTests
         finally { try { Directory.Delete(root, true); } catch { } }
     }
     private static void Assert(bool condition, string name) { if (!condition) throw new InvalidOperationException("Başarısız: " + name); }
+}
+
+internal sealed class DatabaseSettingsForm : Form
+{
+    public DatabaseSettingsForm()
+    {
+        Text = "Veri Takip - Ayarlar";
+        Size = new Size(760, 310); MinimumSize = new Size(680, 280);
+        StartPosition = FormStartPosition.CenterParent;
+        BackColor = Theme.Background; ForeColor = Theme.Ink;
+        FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false;
+
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, Padding = new Padding(22), ColumnCount = 1, RowCount = 4,
+            BackColor = Theme.Background
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        Controls.Add(layout);
+
+        var title = Theme.Label("VERİTABANI KONUMU", 11, true);
+        title.Dock = DockStyle.Fill; title.TextAlign = ContentAlignment.MiddleLeft;
+        layout.Controls.Add(title, 0, 0);
+
+        var pathBox = new Guna2TextBox
+        {
+            Dock = DockStyle.Fill, ReadOnly = true, Text = Database.PathName,
+            BorderRadius = 8, FillColor = Theme.Input, ForeColor = Theme.Ink,
+            BorderColor = Theme.Border, Font = new Font("Segoe UI", 9F),
+            Margin = new Padding(0, 4, 0, 8)
+        };
+        pathBox.TextOffset = new Point(8, 0);
+        layout.Controls.Add(pathBox, 0, 1);
+
+        var actions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false, BackColor = Color.Transparent, Padding = new Padding(0, 4, 0, 0)
+        };
+        layout.Controls.Add(actions, 0, 2);
+
+        var copyPath = Theme.Button("Yolu Kopyala", false, 140);
+        copyPath.Click += (_, _) =>
+        {
+            try { Clipboard.SetText(Database.PathName); }
+            catch (Exception ex) { MessageBox.Show(this, ex.Message, "Kopyalama hatası", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        };
+        actions.Controls.Add(copyPath);
+
+        var backup = Theme.Button("Veritabanını Yedekle", true, 175, Theme.Blue);
+        backup.Click += (_, _) =>
+        {
+            using var save = new SaveFileDialog
+            {
+                Title = "Veritabanı yedeğini kaydet",
+                Filter = "SQLite veritabanı (*.db)|*.db|Tüm dosyalar (*.*)|*.*",
+                FileName = "MiralayIFS-data-yedek.db",
+                AddExtension = true,
+                DefaultExt = "db",
+                OverwritePrompt = true
+            };
+            if (save.ShowDialog(this) != DialogResult.OK) return;
+            try
+            {
+                using var source = Database.Open();
+                var destinationBuilder = new SqliteConnectionStringBuilder { DataSource = save.FileName };
+                using var destination = new SqliteConnection(destinationBuilder.ToString());
+                destination.Open();
+                source.BackupDatabase(destination);
+                MessageBox.Show(this, "Veritabanı yedeği başarıyla oluşturuldu.\n\n" + save.FileName,
+                    "Yedekleme tamamlandı", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Veritabanı yedeği oluşturulamadı.\n\n" + ex.Message,
+                    "Yedekleme hatası", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        };
+        actions.Controls.Add(backup);
+
+        var openFolder = Theme.Button("Klasörü Aç", false, 125, Color.FromArgb(7, 105, 119));
+        openFolder.Click += (_, _) =>
+        {
+            try
+            {
+                var folder = Path.GetDirectoryName(Database.PathName);
+                if (string.IsNullOrWhiteSpace(folder)) throw new InvalidOperationException("Veritabanı klasörü belirlenemedi.");
+                Directory.CreateDirectory(folder);
+                Process.Start(new ProcessStartInfo("explorer.exe", "\"" + folder + "\"") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Veritabanı klasörü açılamadı.\n\n" + ex.Message,
+                    "Klasör açılamadı", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        };
+        actions.Controls.Add(openFolder);
+
+        var note = Theme.Label("Veriler Windows kullanıcı profilindeki yerel SQLite dosyasında tutulur. Yedekleme işlemi açık veritabanından güvenli kopya alır; uygulamanın kullandığı dosyayı taşımaz veya değiştirmez.", 8.5F, color: Theme.Muted);
+        note.Dock = DockStyle.Fill; note.TextAlign = ContentAlignment.TopLeft;
+        layout.Controls.Add(note, 0, 3);
+    }
 }
 
 internal sealed class FieldEditor : Form
