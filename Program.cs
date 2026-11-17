@@ -1191,7 +1191,7 @@ internal sealed class FieldEditor : Form
     {
         Fields = fields.Select(x => new Field { Name = x.Name, Expression = x.Expression, Value = x.Value, CopyValue = x.CopyValue, Queryable = x.Queryable, Enabled = x.Enabled }).ToList();
         Text = "Alanlar ve sorgu koşulları"; Size = new Size(1000, 700); MinimumSize = new Size(820, 520); StartPosition = FormStartPosition.CenterParent; BackColor = Theme.Background; ForeColor = Theme.Ink;
-        var header = Theme.Label("1) Alan / sorgu  2) COPYOBJECT içindeki başlangıç değeri  3) Senin filtre değerin. Filtre için kutuyu işaretle. Örnek: DK%-1 = DK ile başlayan ve -1 ile biten tüm değerler. % tek başına filtre uygulamaz. Tarih: 01.01.2026..31.01.2026", 9, color: Theme.Muted); header.Dock = DockStyle.Top; header.Height = 42; header.Padding = new Padding(10, 12, 0, 0); Controls.Add(header);
+        var header = Theme.Label("1) Alan / sorgu  2) COPYOBJECT içindeki başlangıç değeri  3) Senin filtre değerin. Filtre için kutuyu işaretle. Örnek: DK%-1 = DK ile başlayan ve -1 ile biten değerler. Birden fazla seçenek için noktalı virgül kullan: Yayımlandı;Başlatıldı. Hariç tutmak için <>Kapatıldı yaz. Tarih: 01.01.2026..31.01.2026", 9, color: Theme.Muted); header.Dock = DockStyle.Top; header.Height = 42; header.Padding = new Padding(10, 12, 0, 0); Controls.Add(header);
         grid.Dock = DockStyle.Fill; grid.AllowUserToAddRows = false; grid.RowHeadersVisible = false; grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
         grid.BackgroundColor = Theme.Panel; grid.BorderStyle = BorderStyle.None; grid.GridColor = Theme.Border; grid.EnableHeadersVisualStyles = false; grid.RowTemplate.Height = 36; grid.ColumnHeadersHeight = 40;
         grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(48, 33, 111); grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.White; grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 8.5F, FontStyle.Bold);
@@ -1203,7 +1203,7 @@ internal sealed class FieldEditor : Form
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "value", HeaderText = "İstediğin filtre değeri", FillWeight = 130 });
         foreach (var f in Fields) { var copyValue = string.IsNullOrEmpty(f.CopyValue) ? f.Value : f.CopyValue;
             var i = grid.Rows.Add(f.Enabled, f.Expression, copyValue, f.Value); grid.Rows[i].Cells[0].ReadOnly = !f.Queryable; grid.Rows[i].Cells[3].ReadOnly = !f.Queryable; }
-        grid.CellFormatting += (_, e) => { if (e.RowIndex >= 0 && !Fields[e.RowIndex].Queryable) e.CellStyle.ForeColor = Theme.Muted; };
+        grid.CellFormatting += (_, e) => { if (e.RowIndex >= 0 && !Fields[e.RowIndex].Queryable) e.CellStyle.ForeColor = Theme.Muted; if (e.RowIndex >= 0 && e.ColumnIndex == 3) { e.CellStyle.BackColor = Color.White; e.CellStyle.ForeColor = Color.FromArgb(25, 28, 40); e.CellStyle.SelectionBackColor = Color.FromArgb(224, 235, 255); e.CellStyle.SelectionForeColor = Color.FromArgb(20, 24, 36); e.CellStyle.Padding = new Padding(4); } };
         Controls.Add(grid); var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 57, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8), BackColor = Theme.Background }; Controls.Add(footer);
         var ok = Theme.Button("Seçimleri kaydet", true, 155); ok.Click += (_, _) => Commit(); footer.Controls.Add(ok);
         var cancel = Theme.Button("Vazgeç", false, 100); cancel.DialogResult = DialogResult.Cancel; footer.Controls.Add(cancel);
