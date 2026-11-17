@@ -282,9 +282,15 @@ try {
   for ($offset = 0; $offset -lt $matchingCount; $offset += $chunkSize) {
     $upper = [Math]::Min([long]($offset + $chunkSize), $matchingCount)
     $sql = "SELECT * FROM (SELECT Q.*, ROWNUM AS MIRALAY_RN FROM (SELECT $cols FROM $view$whereClause) Q WHERE ROWNUM <= $upper) WHERE MIRALAY_RN > $offset"
-    $countCmd.CommandText = $sql
-    $countCmd.MaxRows = $chunkSize
-    $table = $countCmd.ExecuteReader()
+    # Use a fresh provider command for each data page. The count command has
+    # already executed and may not be reusable by the IFS Access Provider.
+    $dataCmd = New-Object Ifs.Fnd.AccessProvider.PLSQL.FndPLSQLSelectCommand($conn)
+    $dataCmd.CommandText = $sql
+    $dataCmd.MaxRows = $chunkSize
+    foreach ($bind in $binds) {
+      $dataCmd.BindVariables.Add($bind)
+    }
+    $table = $dataCmd.ExecuteReader()
     foreach ($row in $table.Rows) {
       $item = [ordered]@{}
       for ($i = 0; $i -lt $table.Columns.Count; $i++) {
