@@ -274,11 +274,11 @@ try {
   if ($matchingCount -gt [int]::MaxValue) {
     throw "Eşleşen kayıt sayısı PowerShell/IFS satır sınırını aşıyor: $matchingCount"
   }
-  # Buyuk sonuc setlerini tek seferde istemciye yuklemek yerine 1.000'er satirlik
-  # sayfalar halinde al. Parcalar kullaniciya gosterilmez; tek sonuc olarak birlestirilir.
+  # Keep each IFS response small, especially for wide views with many columns.
+  # Pages are combined locally and remain a single result in the desktop UI.
   [Console]::Out.WriteLine("MIRALAY_PROGRESS:0:$matchingCount")
   [Console]::Out.Flush()
-  $chunkSize = 1000
+  $chunkSize = 25
   $rows = [System.Collections.Generic.List[object]]::new()
   for ($offset = 0; $offset -lt $matchingCount; $offset += $chunkSize) {
     $upper = [Math]::Min([long]($offset + $chunkSize), $matchingCount)
