@@ -872,7 +872,10 @@ internal sealed class ExplorerForm : Form
         try { var savedNotes = Database.GetTextPreference("manual_descriptions"); if (!string.IsNullOrWhiteSpace(savedNotes)) manualDescriptions.Clear(); if (!string.IsNullOrWhiteSpace(savedNotes)) foreach (var pair in JsonSerializer.Deserialize<Dictionary<string,string>>(savedNotes) ?? []) manualDescriptions[pair.Key] = pair.Value; } catch { }
         ApplySearch();
     }
-    private static string DisplayFieldName(string name) => name.ToUpperInvariant() switch { "OBJSTATE" or "STATE" or "STATUS" => "DURUM", "ORDER_NO" => "SİPARİŞ NO", "PART_NO" => "PARÇA NO", "DESCRIPTION" => "AÇIKLAMA", "CONTRACT" => "FABRİKA", "DATE_ENTERED" => "GİRİŞ TARİHİ", "DUE_DATE" => "TESLİM TARİHİ", "CUSTOMER_NO" => "MÜŞTERİ NO", "CUSTOMER_NAME" => "MÜŞTERİ", _ => name };\n    private static string DescriptionKey(Snapshot row) => row.At + "|" + row.Kind + "|" + SyncService.Canonical(JsonSerializer.SerializeToElement(row.Values));\n    private void SaveManualDescriptions() => Database.SetTextPreference("manual_descriptions", JsonSerializer.Serialize(manualDescriptions));\n    private void AddGridColumn(string name, string title, int width, bool fill)
+    private static string DisplayFieldName(string name) => name.ToUpperInvariant() switch { "OBJSTATE" or "STATE" or "STATUS" => "DURUM", "ORDER_NO" => "SİPARİŞ NO", "PART_NO" => "PARÇA NO", "DESCRIPTION" => "AÇIKLAMA", "CONTRACT" => "FABRİKA", "DATE_ENTERED" => "GİRİŞ TARİHİ", "DUE_DATE" => "TESLİM TARİHİ", "CUSTOMER_NO" => "MÜŞTERİ NO", "CUSTOMER_NAME" => "MÜŞTERİ", _ => name };
+    private static string DescriptionKey(Snapshot row) => row.At + "|" + row.Kind + "|" + SyncService.Canonical(JsonSerializer.SerializeToElement(row.Values));
+    private void SaveManualDescriptions() => Database.SetTextPreference("manual_descriptions", JsonSerializer.Serialize(manualDescriptions));
+    private void AddGridColumn(string name, string title, int width, bool fill)
     {
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = title, FillWeight = width, MinimumWidth = fill ? 110 : width, AutoSizeMode = fill ? DataGridViewAutoSizeColumnMode.Fill : DataGridViewAutoSizeColumnMode.None, Width = width });
     }
