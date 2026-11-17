@@ -497,6 +497,7 @@ internal sealed class ExplorerForm : Form
     private readonly Guna2Button fetchButton = Theme.Button("↻   Şimdi Çek", true, 140, Theme.Blue);
     private readonly Guna2Button scheduleOffButton = Theme.Button("Zamanlayıcıyı Kapat", false, 150, Color.FromArgb(105, 55, 72));
     private readonly List<int> visibleRowIndexes = [];
+    private readonly Dictionary<string, string> columnFilters = new(StringComparer.OrdinalIgnoreCase);
     private Guna2Panel? emptyState;
     private Label? emptyTitle, emptySubtitle;
     private Label? sourceEmptyState;
@@ -707,6 +708,7 @@ internal sealed class ExplorerForm : Form
         grid.DefaultCellStyle.BackColor = Theme.Panel; grid.DefaultCellStyle.ForeColor = Theme.Ink; grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(73, 50, 141);
         grid.DefaultCellStyle.SelectionForeColor = Theme.Ink; grid.DefaultCellStyle.Font = new Font("Segoe UI", 9F); grid.DefaultCellStyle.Padding = new Padding(8, 0, 0, 0);
         grid.AlternatingRowsDefaultCellStyle.BackColor = Theme.PanelLight;
+        grid.ColumnHeaderMouseDoubleClick += (_, e) => SetColumnFilter(e.ColumnIndex);
         grid.CellFormatting += (_, e) =>
         {
             if (e.RowIndex < 0 || grid.Columns[e.ColumnIndex].Name != "__kind") return;
@@ -878,7 +880,7 @@ internal sealed class ExplorerForm : Form
         if (grid.Columns.Count == 0) { count.Text = "0 kayıt"; return; }
         var q = searchBox.Text.Trim(); visibleRowIndexes.Clear();
         for (int index = 0; index < resultRows.Count; index++)
-            if (RowMatchesSearch(resultRows[index], q)) visibleRowIndexes.Add(index);
+            if (RowMatchesSearch(resultRows[index], q) && RowMatchesColumnFilters(resultRows[index])) visibleRowIndexes.Add(index);
         grid.RowCount = visibleRowIndexes.Count; grid.Invalidate();
         count.Text = q.Length > 0 ? $"{visibleRowIndexes.Count} / {resultRows.Count} kayıt" : $"{resultRows.Count} kayıt";
         if (emptyState is not null)
@@ -887,6 +889,39 @@ internal sealed class ExplorerForm : Form
             if (emptyTitle is not null) emptyTitle.Text = q.Length > 0 ? "Eşleşen kayıt bulunamadı" : "Henüz kayıt yok";
             if (emptySubtitle is not null) emptySubtitle.Text = q.Length > 0 ? "Arama metnini değiştirip yeniden deneyin." : "Sorgunu çalıştırdığında sonuçlar burada görünecek.";
         }
+    }
+    private bool RowMatchesColumnFilters(Snapshot row)
+    {
+        foreach (var filter in columnFilters)
+        {
+            string value = filter.Key switch
+            {
+                "__at" => row.At,
+                "__kind" => row.Kind,
+                _ when filter.Key.StartsWith("f", StringComparison.Ordinal) &&
+                    int.TryParse(filter.Key.Substring(1), out int i) && i >= 0 && i < fieldNames.Count
+                    => row.Values.TryGetValue(fieldNames[i], out var element) ? ValueText(element) : "",
+                _ => ""
+            };
+            if (!value.Contains(filter.Value, StringComparison.CurrentCultureIgnoreCase)) return false;
+        }
+        return true;
+    }
+    private void SetColumnFilter(int columnIndex)
+    {
+        if (columnIndex < 0 || columnIndex >= grid.Columns.Count) return;
+        var column = grid.Columns[columnIndex];
+        string current = columnFilters.TryGetValue(column.Name, out var existing) ? existing : "";
+        using var dialog = new Form { Text = "Sütun filtresi: " + column.HeaderText, Width = 390, Height = 155, StartPosition = FormStartPosition.CenterParent, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, BackColor = Theme.Background };
+        var input = new TextBox { Left = 14, Top = 15, Width = 345, Text = current };
+        var apply = new Button { Text = "Uygula", Left = 185, Top = 58, Width = 80, DialogResult = DialogResult.OK };
+        var clear = new Button { Text = "Temizle", Left = 95, Top = 58, Width = 80, DialogResult = DialogResult.Ignore };
+        var cancel = new Button { Text = "İptal", Left = 275, Top = 58, Width = 80, DialogResult = DialogResult.Cancel };
+        dialog.Controls.AddRange(new Control[] { input, apply, clear, cancel }); dialog.AcceptButton = apply; dialog.CancelButton = cancel;
+        var result = dialog.ShowDialog(this);
+        if (result == DialogResult.OK && !string.IsNullOrWhiteSpace(input.Text)) columnFilters[column.Name] = input.Text.Trim();
+        else if (result == DialogResult.Ignore || result == DialogResult.OK) columnFilters.Remove(column.Name);
+        ApplySearch();
     }
     private void ChooseColumns()
     {
