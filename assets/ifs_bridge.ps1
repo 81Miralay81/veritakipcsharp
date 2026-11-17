@@ -201,15 +201,29 @@ try {
       $binds.Add((New-Object Ifs.Fnd.AccessProvider.PLSQL.FndBindVariable($toName, $toAttr)))
     }
     else {
-      $bindName = "P_VAL_$index"
-      if ($value.Contains("%") -or $value.Contains("_")) {
-        $where += ('UPPER("' + $field + '") LIKE UPPER(:' + $bindName + ')')
+      # Semicolon-separated values are alternatives. Prefix an item with <>
+      # to exclude it; wildcard characters retain the existing LIKE behavior.
+      $items = @($value -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+      $include = @()
+      $exclude = @()
+      foreach ($item in $items) {
+        $isExclude = $item.StartsWith('<>')
+        $term = if ($isExclude) { $item.Substring(2).Trim() } else { $item }
+        if ([string]::IsNullOrWhiteSpace($term)) { continue }
+        $bindName = "P_VAL_$index"
+        $operator = if ($term.Contains('%') -or $term.Contains('_')) { 'LIKE' } else { '=' }
+        if ($isExclude) {
+          if ($operator -eq 'LIKE') { $exclude += ('UPPER("' + $field + '") NOT LIKE UPPER(:' + $bindName + ')') }
+          else { $exclude += ('"' + $field + '" <> :' + $bindName) }
+        }
+        elseif ($operator -eq 'LIKE') { $include += ('UPPER("' + $field + '") LIKE UPPER(:' + $bindName + ')') }
+        else { $include += ('"' + $field + '" = :' + $bindName) }
+        $attr = New-Object Ifs.Fnd.Data.FndAlphaAttribute($term)
+        $binds.Add((New-Object Ifs.Fnd.AccessProvider.PLSQL.FndBindVariable($bindName, $attr)))
+        $index++
       }
-      else {
-        $where += ('"' + $field + '" = :' + $bindName)
-      }
-      $attr = New-Object Ifs.Fnd.Data.FndAlphaAttribute($value)
-      $binds.Add((New-Object Ifs.Fnd.AccessProvider.PLSQL.FndBindVariable($bindName, $attr)))
+      if ($include.Count -gt 0) { $where += ('(' + ($include -join ' OR ') + ')') }
+      if ($exclude.Count -gt 0) { $where += ('(' + ($exclude -join ' AND ') + ')') }
     }
     $index++
   }
