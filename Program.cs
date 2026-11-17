@@ -694,7 +694,8 @@ internal sealed class ExplorerForm : Form
         grid.RowHeadersVisible = false; grid.AllowUserToAddRows = false; grid.AllowUserToDeleteRows = false; grid.ReadOnly = true;
         grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill; grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect; grid.MultiSelect = true;
         grid.RowTemplate.Height = 38; grid.ColumnHeadersHeight = 42; grid.EnableHeadersVisualStyles = false; grid.VirtualMode = true;
-        grid.CellValuePushed += (_, e) => { if (e.RowIndex >= 0 && e.RowIndex < visibleRowIndexes.Count && grid.Columns[e.ColumnIndex].Name == "__description") { var row = resultRows[visibleRowIndexes[e.RowIndex]]; manualDescriptions[DescriptionKey(row)] = e.Value?.ToString() ?? ""; SaveManualDescriptions(); } };\n        grid.CellValueNeeded += (_, e) =>
+        grid.CellValuePushed += (_, e) => { if (e.RowIndex >= 0 && e.RowIndex < visibleRowIndexes.Count && grid.Columns[e.ColumnIndex].Name == "__description") { var row = resultRows[visibleRowIndexes[e.RowIndex]]; manualDescriptions[DescriptionKey(row)] = e.Value?.ToString() ?? ""; SaveManualDescriptions(); } };
+        grid.CellValueNeeded += (_, e) =>
         {
             if (e.RowIndex < 0 || e.RowIndex >= visibleRowIndexes.Count) return;
             var sourceIndex = visibleRowIndexes[e.RowIndex]; if (sourceIndex < 0 || sourceIndex >= resultRows.Count) return;
@@ -939,8 +940,8 @@ internal sealed class ExplorerForm : Form
             : resultRows;
         if (rows.Count == 0) { MessageBox.Show(this, "Kopyalanacak sonuç bulunamadı.", "Kopyalama", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
         var keys = visibleFields.Count > 0 ? visibleFields : fieldNames;
-        var lines = new List<string> { "Çekilme zamanı\tDeğişim\t" + string.Join("\t", keys) };
-        foreach (var row in rows) lines.Add(string.Join("\t", new[] { row.At, row.Kind }.Concat(keys.Select(k => row.Values.TryGetValue(k, out var v) ? ValueText(v) : ""))));
+        var lines = new List<string> { "Çekilme zamanı\tDeğişim\t" + string.Join("\t", keys.Select(DisplayFieldName)) + "\tAçıklama (manuel)" };
+        foreach (var row in rows) lines.Add(string.Join("\t", new[] { row.At, row.Kind }.Concat(keys.Select(k => row.Values.TryGetValue(k, out var v) ? ValueText(v) : "")).Append(manualDescriptions.TryGetValue(DescriptionKey(row), out var note) ? note : "")));
         Clipboard.SetText(string.Join(Environment.NewLine, lines)); status.Text = $"{rows.Count} satır panoya kopyalandı.";
     }
     private void Schedule()
