@@ -274,11 +274,10 @@ try {
   if ($matchingCount -gt [int]::MaxValue) {
     throw "Eşleşen kayıt sayısı PowerShell/IFS satır sınırını aşıyor: $matchingCount"
   }
-  # Keep each IFS response small, especially for wide views with many columns.
-  # Pages are combined locally and remain a single result in the desktop UI.
+  # Fetch results in 1,000-row pages, then combine them into one result for the desktop UI.
   [Console]::Out.WriteLine("MIRALAY_PROGRESS:0:$matchingCount")
   [Console]::Out.Flush()
-  $chunkSize = 25
+  $chunkSize = 1000
   $rows = [System.Collections.Generic.List[object]]::new()
   for ($offset = 0; $offset -lt $matchingCount; $offset += $chunkSize) {
     $upper = [Math]::Min([long]($offset + $chunkSize), $matchingCount)
