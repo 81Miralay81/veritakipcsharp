@@ -498,6 +498,7 @@ internal sealed class ExplorerForm : Form
     private readonly Guna2Button scheduleOffButton = Theme.Button("Zamanlayıcıyı Kapat", false, 150, Color.FromArgb(105, 55, 72));
     private readonly List<int> visibleRowIndexes = [];
     private readonly Dictionary<string, string> columnFilters = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> manualDescriptions = new(StringComparer.Ordinal);
     private Guna2Panel? emptyState;
     private Label? emptyTitle, emptySubtitle;
     private Label? sourceEmptyState;
@@ -693,13 +694,14 @@ internal sealed class ExplorerForm : Form
         grid.RowHeadersVisible = false; grid.AllowUserToAddRows = false; grid.AllowUserToDeleteRows = false; grid.ReadOnly = true;
         grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill; grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect; grid.MultiSelect = true;
         grid.RowTemplate.Height = 38; grid.ColumnHeadersHeight = 42; grid.EnableHeadersVisualStyles = false; grid.VirtualMode = true;
-        grid.CellValueNeeded += (_, e) =>
+        grid.CellValuePushed += (_, e) => { if (e.RowIndex >= 0 && e.RowIndex < visibleRowIndexes.Count && grid.Columns[e.ColumnIndex].Name == "__description") { var row = resultRows[visibleRowIndexes[e.RowIndex]]; manualDescriptions[DescriptionKey(row)] = e.Value?.ToString() ?? ""; SaveManualDescriptions(); } };\n        grid.CellValueNeeded += (_, e) =>
         {
             if (e.RowIndex < 0 || e.RowIndex >= visibleRowIndexes.Count) return;
             var sourceIndex = visibleRowIndexes[e.RowIndex]; if (sourceIndex < 0 || sourceIndex >= resultRows.Count) return;
             var row = resultRows[sourceIndex]; var column = grid.Columns[e.ColumnIndex].Name;
             if (column == "__at") e.Value = row.At;
             else if (column == "__kind") e.Value = row.Kind;
+            else if (column == "__description") e.Value = manualDescriptions.TryGetValue(DescriptionKey(row), out var note) ? note : "";
             else if (column.Length > 1 && int.TryParse(column.AsSpan(1), out var fieldIndex) && fieldIndex >= 0 && fieldIndex < fieldNames.Count)
                 e.Value = row.Values.TryGetValue(fieldNames[fieldIndex], out var value) ? ValueText(value) : "";
         };
@@ -863,10 +865,10 @@ internal sealed class ExplorerForm : Form
             try { var saved = JsonSerializer.Deserialize<List<string>>(selected.VisibleColumns); if (saved is not null) visible = fieldNames.Where(saved.Contains).ToList(); } catch { }
         visibleFields = visible;
         AddGridColumn("__at", "ÇEKİLME ZAMANI", 150, false); AddGridColumn("__kind", "DEĞİŞİM", 95, false);
-        foreach (var name in visibleFields) AddGridColumn("f" + fieldNames.IndexOf(name), name, 180, true);
+        foreach (var name in visibleFields) AddGridColumn("f" + fieldNames.IndexOf(name), DisplayFieldName(name), 180, true);\n        AddGridColumn("__description", "AÇIKLAMA (MANUEL)", 220, true);\n        grid.Columns["__description"].ReadOnly = false;\n        try { var savedNotes = Database.GetTextPreference("manual_descriptions"); if (!string.IsNullOrWhiteSpace(savedNotes)) manualDescriptions.Clear(); if (!string.IsNullOrWhiteSpace(savedNotes)) foreach (var pair in JsonSerializer.Deserialize<Dictionary<string,string>>(savedNotes) ?? []) manualDescriptions[pair.Key] = pair.Value; } catch { }
         ApplySearch();
     }
-    private void AddGridColumn(string name, string title, int width, bool fill)
+    private static string DisplayFieldName(string name) => name.ToUpperInvariant() switch { "OBJSTATE" or "STATE" or "STATUS" => "DURUM", "ORDER_NO" => "SİPARİŞ NO", "PART_NO" => "PARÇA NO", "DESCRIPTION" => "AÇIKLAMA", "CONTRACT" => "FABRİKA", "DATE_ENTERED" => "GİRİŞ TARİHİ", "DUE_DATE" => "TESLİM TARİHİ", "CUSTOMER_NO" => "MÜŞTERİ NO", "CUSTOMER_NAME" => "MÜŞTERİ", _ => name };\n    private static string DescriptionKey(Snapshot row) => row.At + "|" + row.Kind + "|" + SyncService.Canonical(JsonSerializer.SerializeToElement(row.Values));\n    private void SaveManualDescriptions() => Database.SetTextPreference("manual_descriptions", JsonSerializer.Serialize(manualDescriptions));\n    private void AddGridColumn(string name, string title, int width, bool fill)
     {
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = title, FillWeight = width, MinimumWidth = fill ? 110 : width, AutoSizeMode = fill ? DataGridViewAutoSizeColumnMode.Fill : DataGridViewAutoSizeColumnMode.None, Width = width });
     }
